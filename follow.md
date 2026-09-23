@@ -21,8 +21,9 @@
 | Persona / Resource | Username / Identifiers | Password | Role / Scope | Details |
 | :--- | :--- | :--- | :--- | :--- |
 | **Docker (SQL Server)** | Host: `localhost:1433`, User: `sa` | `YourStrong!Passw0rd` | Database: `HRMSCore_Local` | Docker SQL Server Container |
-| **Superadmin** | `superadmin` / `admin@hrms.internal` | `KingPwd!2032` *(or `Admin@123`)* | `superadmin` (God Mode) | Full platform root access |
-| **Rakesh (Superadmin)** | `rakesh` / `rksthedev@gmail.com` | `KingPwd!2032` | Super Admin (`comp-agi-01`) | Platform owner & administrator |
+| **Rakesh (Developer / God Mode)** | `rakesh` / `rksthedev@gmail.com` | `Admin@123` | `role_dev` / `DEVELOPER` | **Universal God Mode**: Unrestricted access across all business endpoints, dev tools, and diagnostics (reassignable anytime) |
+| **Developer Root** | `developer` / `dev@hrms.internal` | `KingPwd!2032` | `role_dev` / `DEVELOPER` | Dedicated system developer root account |
+| **Superadmin** | `superadmin` / `admin@hrms.internal` | `KingPwd!2032` | `superadmin` / `Super Admin` | IT System Administrator (governed strictly by database-assigned `role_permissions`) |
 | **Amina Gitau (Employee)**| `employee` / `EMP-STAFF-005` / `amina.gitau@hospital.co.ke` | `KingPwd!2032` | Staff Employee / ESS (`comp-lch-01`) | Reports to Nafula Gitau |
 | **Nafula Gitau (Line Manager)** | `manager` / `EMP-MGR-004` / `nafula.gitau@hospital.co.ke` | `KingPwd!2032` | Line Manager / EMS (`comp-lch-01`) | Stage 1 Approver (Department) |
 | **Caroline Nduta (HR Manager)** | `hr` / `EMP-HR-002` / `caroline.nduta@hospital.co.ke` | `KingPwd!2032` | HR Manager (`comp-lch-01`) | Stage 2 Approver (Hospital HR) |
