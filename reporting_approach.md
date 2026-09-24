@@ -305,3 +305,15 @@ In our multi-company healthcare group holding structure:
    - Group-level items (e.g. Group HR approvals, Executive requisitions, Group policies, cross-company assignments) route to users with `roleLevel == "GLOBAL"` or `roleCode == "GROUP_HR"`.
    - The Task Hub displays the prominent **"Group-Wide Authority"** badge when a user holds holding-level approval rights, and switches to **"[Company Name]"** for company-scoped approvers.
 
+---
+
+## 8. Next Steps & Enhancement Queue
+
+| # | Enhancement Stream | Objective & Action Items | Target Status |
+| :-: | :--- | :--- | :-: |
+| **8.1** | **Live Persona Verification** | • **Team Lead / Line Manager (`james.otieno`)**: Verify he sees his direct reports' requests within Lifecare Hospitals with presence check.<br>• **Regular Staff (`peter.njoroge`)**: Confirm Tasks Hub is hidden if 0 reports, or visible if team members are mapped.<br>• **Company HR (`aisha.kamau`)**: Verify company-wide review within Lifecare Hospitals.<br>• **Group HR (`wanjiku.muthoni`)**: Verify cross-company group-wide review across all hospital entities. | **ACTIVE / READY** |
+| **8.2** | **Dynamic Live Badge Counts on Sidebar** | • Surface real-time pending task badge counter directly in `Sidebar.tsx` (e.g., `Tasks Hub [ 3 ]`) showing items awaiting the authenticated user's action.<br>• Polling or reactive count invalidation when decisions are submitted. | **QUEUED** |
+| **8.3** | **Approval Matrix Visual Rule Builder** | • Provide an administrative UI to configure multi-tier thresholds dynamically (e.g., Leave > 5 days requires Tier 1 Manager + Tier 2 HR; Requisitions > KES 200,000 require Manager + Dept Head + Finance + CEO).<br>• Persist custom sequences in `ApprovalMatrixRules` table. | **QUEUED** |
+| **8.4** | **Email & In-App Decision Notifications** | • Trigger instant in-app alerts and notifications when a manager approves, returns, or rejects an employee's request.<br>• Log all decision actions with immutable remarks to `AuditLogs` table. | **QUEUED** |
+
+
