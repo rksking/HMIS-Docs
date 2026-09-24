@@ -262,10 +262,46 @@ Non-admin approvers only receive items where:
 
 ## 6. Implementation & Closure Roadmap
 
-| Phase       | Milestone                                   | Scope / Deliverables                                                                                                                                                                                                                    |    Status    |
-| :---------- | :------------------------------------------ | :-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | :----------: |
-| **Phase 1** | **Organizational Hierarchy & DB Integrity** | • Verify `EmploymentDetails.ReportingManagerId` FK.<br>• Enable any active employee in `EmployeeService.GetManagersAsync`.<br>• Enforce circular reporting loop checks.                                                                 | **COMPLETE** |
-| **Phase 2** | **Backend Context & Resolution Engine**     | • Dynamic context resolution (`directReportsCount`, `hasDirectReports`).<br>• Relational query scoping in `ApprovalsService` for `AWAITING_ME`.<br>• Self-approval escalation in `ApprovalEngine`.<br>• 39 backend unit tests verified. | **COMPLETE** |
-| **Phase 3** | **Task Hub Controller & Service (`/task`)** | • Create `TaskController` exposing `/api/task/pending`, `/api/task/metrics`, `/api/task/decide`.<br>• Seed `Menus` table with `Code='TASK'`, `Route='/task'`, `Name='Task'`.                                                            |   **NEXT**   |
-| **Phase 4** | **Frontend UI: 6 Workstream Tabs & Drawer** | • Build `/task` page with 6 tabs (All Pending, Leave, Attendance, Requisitions, Payroll, Audit).<br>• Team presence calendar overlap drawer.<br>• Dynamic sidebar unlocking in `Sidebar.tsx`.                                           | **UPCOMING** |
-| **Phase 5** | **End-to-End Verification & Sign-off**      | • Test case: Senior employee with 2 direct reports.<br>• Test case: Self-approval auto-escalation.<br>• Test case: Multi-select batch approval.                                                                                         | **UPCOMING** |
+| Phase       | Milestone                                   | Scope / Deliverables                                                                                                                                                                                                                                                                          |    Status    |
+| :---------- | :------------------------------------------ | :-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | :----------: |
+| **Phase 1** | **Organizational Hierarchy & DB Integrity** | • Verify `EmploymentDetails.ReportingManagerId` FK.<br>• Enable any active employee in `EmployeeService.GetManagersAsync` regardless of title string.<br>• Enforce circular reporting loop checks.                                                                                          | **COMPLETE** |
+| **Phase 2** | **Backend Context & Resolution Engine**     | • Dynamic context resolution (`directReportsCount`, `hasDirectReports`).<br>• Relational query scoping in `ApprovalsService` for `AWAITING_ME`.<br>• Self-approval escalation in `ApprovalEngine`.<br>• Group vs. Company boundary enforcement.<br>• 41 backend unit tests verified (100% pass). | **COMPLETE** |
+| **Phase 3** | **Task Hub Controller & Service (`/task`)** | • Implemented `ITaskService` and `TaskService` registered in DI.<br>• Created `TaskController` exposing `/api/task/pending`, `/api/task/metrics`, `/api/task/history`, `/api/task/{id}/decide`, `/api/task/batch-decide`, and `/api/task/team-presence`.<br>• Menu table auto-registration for `TASK` (`/task`).<br>• Added `HasDirectReports` & `DirectReportsCount` to `UserDto`. | **COMPLETE** |
+| **Phase 4** | **Frontend UI: 6 Workstream Tabs & Drawers** | • Built `/task` page with 6 tabs: (1) All Pending, (2) Leave & Time-Off, (3) Attendance & Shifts, (4) Requisitions, (5) Payroll Runs, (6) Audit & History.<br>• 50% slide-over `StaffingPresenceDrawer.tsx` with live team roster & adequacy scoring.<br>• 50% slide-over `TaskDecisionDrawer.tsx` with tier stepper & mandatory remark validation.<br>• Multi-select batch decision toolbar.<br>• Dynamic sidebar unlocking in `Sidebar.tsx` for reporting managers.<br>• 0 TypeScript errors (`tsc --noEmit`). | **COMPLETE** |
+| **Phase 5** | **Multi-Company & Persona Verification**    | • Verify Line Manager (`james.otieno` - 4 direct reports): Unlocked Tasks Hub strictly scoped to his team within Lifecare Hospitals.<br>• Verify Staff Employee (`peter.njoroge` - 0 direct reports): Tasks Hub hidden from menu.<br>• Verify Company HR (`aisha.kamau`): Company-wide operational review.<br>• Verify Group HR (`wanjiku.muthoni`): Cross-company holding authority with Group-Wide badge.                                                      | **IN PROGRESS** |
+
+---
+
+## 7. Group Company Scoping Architecture Summary
+
+In our multi-company healthcare group holding structure:
+
+```
+                      ┌──────────────────────────────────────┐
+                      │        Holding Group Level           │
+                      │  (Group HR / Global Administrators)  │
+                      │       "Group-Wide Authority"         │
+                      └──────────────────┬───────────────────┘
+                                         │
+        ┌────────────────────────────────┼────────────────────────────────┐
+        ▼                                ▼                                ▼
+┌─────────────────────┐        ┌─────────────────────┐        ┌─────────────────────┐
+│ Lifecare Hospitals  │        │ Africare Hospital   │        │ Bliss Healthcare    │
+│    (comp-lch-01)    │        │    (comp-afri-01)   │        │   (comp-bliss-01)   │
+├─────────────────────┤        ├─────────────────────┤        ├─────────────────────┤
+│ • Line Managers     │        │ • Line Managers     │        │ • Line Managers     │
+│ • Company HR        │        │ • Company HR        │        │ • Company HR        │
+│ • Team Leaves/OT    │        │ • Team Leaves/OT    │        │ • Team Leaves/OT    │
+│ • Unit Rosters      │        │ • Unit Rosters      │        │ • Unit Rosters      │
+└─────────────────────┘        └─────────────────────┘        └─────────────────────┘
+```
+
+1. **Company Isolation by Default**:
+   - Operational tasks (Leaves, Attendance regularisations, Shift swaps, Overtime approvals, Unit rosters) are evaluated strictly within the employee's specific company (`submitter.CompanyId`).
+   - Line managers only view direct reports within their company.
+   - Company HR handles approvals strictly for their assigned company entity.
+
+2. **Group Escalation & Governance**:
+   - Group-level items (e.g. Group HR approvals, Executive requisitions, Group policies, cross-company assignments) route to users with `roleLevel == "GLOBAL"` or `roleCode == "GROUP_HR"`.
+   - The Task Hub displays the prominent **"Group-Wide Authority"** badge when a user holds holding-level approval rights, and switches to **"[Company Name]"** for company-scoped approvers.
+
