@@ -14,8 +14,8 @@
 
 | # | Module | Primary Monolithic File | Current Lines | Current Internal Tabs | Proposed Sub-Routes | Priority |
 |---|---|---|---|---|---|---|
-| **1** | **Leave Management** | `frontend/src/modules/leave/LeaveView.tsx` | **1,044 lines** | 5 tabs (`balances`, `applications`, `approvals`, `calendar`, `policies`) | `/leave`, `/leave/apply`, `/leave/applications`, `/leave/approvals`, `/leave/calendar` | **High** |
-| **2** | **Organisation Masters** | `frontend/src/modules/org-masters/OrgMastersView.tsx` | **2,180 lines** | 9 tabs (`departments`, `facilities`, `job-titles`, `grades`, `employment-types`, `pay-components`, `cost-centres`, `banks`, `overview`) | `/orgmasters/departments`, `/orgmasters/facilities`, `/orgmasters/job-titles`, `/orgmasters/grades`, `/orgmasters/employment-types`, `/orgmasters/pay-components`, `/orgmasters/cost-centres`, `/orgmasters/banks` | **High** |
+| **1** | **Leave Management** | `frontend/src/modules/leave/` | Modularized | 3 modular sub-views | `/leave`, `/leave/calendar`, `/leave/balances` | ✅ **Completed** |
+| **2** | **Organisation Masters** | `frontend/src/modules/org-masters/` | Modularized | 8 modular sub-views | `/orgmasters`, `/orgmasters/departments`, `/orgmasters/facilities`, `/orgmasters/job-titles`, `/orgmasters/grades`, `/orgmasters/employment-types`, `/orgmasters/pay-components`, `/orgmasters/cost-centres`, `/orgmasters/banks` | ✅ **Completed** |
 | **3** | **Shifts & Schedules** | `frontend/src/modules/shifts/ShiftsAndSchedulesView.tsx` | **468 lines** | 5 tabs (`overview`, `master`, `schedules`, `bulk`, `search`) | `/shifts`, `/shifts/master`, `/shifts/schedules`, `/shifts/roster`, `/shifts/lookup` | **Medium** |
 | **4** | **Company Setup** | `frontend/src/modules/company-setup/CompanySetupView.tsx` | **461 lines** | 3 tabs (`dashboard`, `all_companies`, `approval_routes`) | `/companysetup`, `/companysetup/companies`, `/companysetup/routing` | **Medium** |
 | **5** | **Onboarding** | `frontend/src/modules/onboarding/` | Modularized | 3 modular sub-views | `/onboarding`, `/onboarding/configuration`, `/onboarding/templates` | ✅ **Completed** |
@@ -27,72 +27,70 @@
 
 ---
 
-### Module 1: Leave Management (`/leave`)
+### Module 1: Leave Management (`/leave`) — ✅ Completed
 
-#### 1. Current State & Pain Points
-- **Monolithic File**: `frontend/src/modules/leave/LeaveView.tsx` (1,044 lines).
-- **Internal Tabs**: Handled via internal state `activeTab`:
-  - `balances`: Leave Balances & Entitlements table
-  - `applications`: All Leave Applications table with status badges
-  - `approvals`: Line-manager and HR approval action cards
-  - `calendar`: Department Leave and Public Holiday Calendar view
-  - `policies`: Leave policy definitions and entitlement rules
-- **Database Menu Discrepancies**:
-  - In the `Menus` table under parent `LEAVE`, there are duplicate routes pointing to `/leave` and `/approvals`, while `/leave/apply` and `/leave/balances` lead to 404s because dedicated Next.js App Router pages do not exist.
+#### 1. Implemented Architecture & Database Alignment
+- **Database Menu Alignment (`menus` table in SQL Server)**:
+  - Parent: `Leave Management` (`id: menu-leave`, `code: LEAVE`, `route: -`, `icon: Calendar`)
+  - **Child 1**: `Applications Register` (`id: menu-leave-req`, `code: LEAVE_APPS`, `route: /leave`, `sortOrder: 1`, `icon: FileText`)
+  - **Child 2**: `Staff Leave Calendar` (`id: menu-leave-cal`, `code: LEAVE_CALENDAR`, `route: /leave/calendar`, `sortOrder: 2`, `icon: CalendarDays`)
+  - **Child 3**: `Balances & Entitlements` (`id: menu-leave-bal`, `code: LEAVE_BAL`, `route: /leave/balances`, `sortOrder: 3`, `icon: Layers`)
+  - Redundant duplicate entries (`menu-b7816ab4faf54`, `menu-6ea0e02f0ac24`, `menu-91f1fcebb7c74`, `menu-leave-apply`) deactivated (`isVisible: 0`).
+  - **Centralized Approvals Architecture**: Approvals are unified under `/task` (Enterprise Task Hub with `entityType === "LEAVE"` and `TaskDecisionDrawer`). Header features live counter badge fast-linking directly to `/task?tab=LEAVE`.
 
-#### 2. Target Database Menu Architecture (100% DB-Driven)
-Parent Menu: `Leave Management` (`code: LEAVE`, `icon: Calendar`, `sortOrder: 6`, `route: -`)
-- **Child 1**: `Leave Dashboard & Balances` (`code: LEAVE_BAL`, `route: /leave`, `sortOrder: 1`, `icon: LayoutDashboard`)
-- **Child 2**: `Apply for Leave` (`code: LEAVE_APPLY`, `route: /leave/apply`, `sortOrder: 2`, `icon: CalendarPlus`)
-- **Child 3**: `Leave Applications` (`code: LEAVE_APPS`, `route: /leave/applications`, `sortOrder: 3`, `icon: FileText`)
-- **Child 4**: `Leave Approvals Queue` (`code: LEAVE_APPROVALS`, `route: /leave/approvals`, `sortOrder: 4`, `icon: CheckSquare`)
-- **Child 5**: `Department Leave Calendar` (`code: LEAVE_CALENDAR`, `route: /leave/calendar`, `sortOrder: 5`, `icon: CalendarDays`)
-
-#### 3. Planned Frontend Modular Structure
+#### 2. Implemented Frontend Modular Structure
 ```
 frontend/src/modules/leave/
-├── LeaveView.tsx                     # Clean wrapper / router delegating to sub-views
-├── balances/
-│   └── LeaveBalancesView.tsx         # Dashboard KPIs, balances per employee, entitlement drill-downs
-├── apply/
-│   └── LeaveApplyView.tsx            # Dedicated self-service & manager leave application workflow
+├── LeaveView.tsx                     # Clean wrapper delegating to LeaveApplicationsView
 ├── applications/
-│   └── LeaveApplicationsView.tsx     # Full company leave request register with advanced filters
-├── approvals/
-│   └── LeaveApprovalsView.tsx        # Actionable 2-step manager & HR approval queue with audit notes
+│   └── LeaveApplicationsView.tsx     # Workforce Leave Applications Register with dynamic filters, status badges, row inspect & cancel
 ├── calendar/
-│   └── LeaveCalendarView.tsx         # Department-wide visual leave schedule and public holidays
+│   └── LeaveCalendarView.tsx         # Monthly Interactive Calendar Grid with Gazetted Holidays & Department Absence Roster
+├── balances/
+│   └── LeaveBalancesView.tsx         # Organization-wide Balances Ledger, Monthly Utilisation Heatmap, Statutory Policies Catalog
 ├── components/
-│   ├── LeaveKpiCards.tsx             # 100% dynamic computed statistics (total on leave, pending approvals, utilization rate)
-│   ├── ApplyLeaveDrawer.tsx          # 50% slide-over right drawer for submitting leave requests
-│   ├── LeaveDetailDrawer.tsx         # 50% slide-over right drawer for inspecting application details
-│   └── LeaveWorkflowGuideDrawer.tsx  # 50% slide-over workflow explainer
-└── index.ts                          # Public exports
+│   ├── LeaveNavHeader.tsx            # Multi-company filter, FY selector, pending approvals badge, sub-route navigation pills
+│   ├── LeaveKpiCards.tsx             # 100% computed dynamic metrics (zero static mocks)
+│   ├── ApplyOnBehalfDrawer.tsx       # 75% slide-over right drawer for HR & Managers to proxy-submit leave with contract entitlement verification
+│   ├── LeaveAdjustmentDrawer.tsx     # 50% slide-over right drawer for HR balance manual credit/debit audit adjustments
+│   ├── LeaveDetailDrawer.tsx         # Slide-over right drawer for inspecting timeline, relief handover, and cancellation
+│   ├── LeaveWorkflowGuideDrawer.tsx  # 75% slide-over right drawer for Employment Act 2007 (s.28-30) and approval matrix guidance
+│   └── MonthlyUtilizationTable.tsx   # Annual 12-month leave utilization matrix with quota burn progress
+└── index.ts                          # Clean public exports
 ```
 
-#### 4. App Router Endpoints
-- `src/app/(dashboard)/leave/page.tsx` -> renders `<LeaveBalancesView />`
-- `src/app/(dashboard)/leave/apply/page.tsx` -> renders `<LeaveApplyView />`
+#### 3. App Router Endpoints
+- `src/app/(dashboard)/leave/page.tsx` -> renders `<LeaveApplicationsView />`
 - `src/app/(dashboard)/leave/applications/page.tsx` -> renders `<LeaveApplicationsView />`
-- `src/app/(dashboard)/leave/approvals/page.tsx` -> renders `<LeaveApprovalsView />`
 - `src/app/(dashboard)/leave/calendar/page.tsx` -> renders `<LeaveCalendarView />`
+- `src/app/(dashboard)/leave/balances/page.tsx` -> renders `<LeaveBalancesView />`
 
-#### 5. Code Correction & Static Values Elimination
-- Eliminate any mock leave balances or hardcoded holidays.
-- Fetch public holidays and statutory rules dynamically via `leaveApi` and company country master.
-- Ensure all drawers adhere to `SideDrawer.tsx` with single horizontal action bar.
+#### 4. Design Standards & Width Directive
+- All drawers use `SideDrawer.tsx` with light/modern chrome.
+- Drawers with rich multi-section content (`ApplyOnBehalfDrawer`, `LeaveWorkflowGuideDrawer`) use 75% width per user preference.
+- All KPIs are 100% dynamic and computed from live SQL Server backend data. Zero mock data.
+- Built and validated with 0 TypeScript errors (`npx tsc --noEmit`) and 0 backend errors (`dotnet build HrmsSys.sln`).
 
 ---
 
-### Module 2: Organisation Masters (`/orgmasters`)
+### Module 2: Organisation Masters (`/orgmasters`) — ✅ **Completed**
 
-#### 1. Current State & Pain Points
-- **Monolithic File**: `frontend/src/modules/org-masters/OrgMastersView.tsx` (**2,180 lines**).
-- **Internal Tabs**: Combines 9 distinct master databases into a single component:
-  - `departments`: Departments, units, parent hierarchy, department head assignment
-  - `facilities`: Hospital branches, clinics, geo-locations, physical addresses
-  - `job-titles`: Job designations, clinical vs non-clinical categorization
-  - `grades`: Compensation bands, salary grades, minimum-maximum brackets
+#### 1. Current State & Modularization Summary
+- **Monolithic File Refactored**: `frontend/src/modules/org-masters/OrgMastersView.tsx` reduced from **2,180 lines** down to **~200 lines**, delegating to dedicated sub-views and `OrgMastersDashboard`.
+- **Modular Sub-Views Implemented**:
+  1. `frontend/src/modules/org-masters/departments/DepartmentsMasterView.tsx`: Full tree hierarchy, parent division apex indicators, department head assignments, active headcount, search, pagination, and `DepartmentDrawer`.
+  2. `frontend/src/modules/org-masters/facilities/FacilitiesMasterView.tsx`: Hospital branch registry, city, street address, assigned staff, and `LocationDrawer`.
+  3. `frontend/src/modules/org-masters/job-titles/JobTitlesMasterView.tsx`: Designations, clinical vs corporate filters/badges, active headcount, and `JobTitleDrawer`.
+  4. `frontend/src/modules/org-masters/grades/GradesMasterView.tsx`: Compensation bands, salary floor/ceiling (`salaryMin`/`salaryMax`), and `GradeDrawer`.
+  5. `frontend/src/modules/org-masters/employment-types/EmploymentTypesMasterView.tsx`: Contract types, statutory NSSF/SHIF badges, pension scheme, probation/notice days, and `EmploymentTypeDrawer`.
+  6. `frontend/src/modules/org-masters/pay-components/PayComponentsMasterView.tsx`: Earnings vs Deductions pills, tax/pensionable flags, fixed vs % calculation, and `PayComponentDrawer`.
+  7. `frontend/src/modules/org-masters/cost-centres/CostCentresMasterView.tsx`: GL account codes, expense descriptions, linked staff, and `CostCentreDrawer`.
+  8. `frontend/src/modules/org-masters/banks/BanksMasterView.tsx`: Commercial banks & clearing branches toggle, multi-country filter (Kenya, UAE, India), SWIFT/BIC, CBK EFT/IFSC clearing codes, and `BankDrawer` & `BankBranchDrawer`.
+- **Navigation & Layout Adherence**:
+  - `OrgMastersNavHeader.tsx`: Single horizontal action bar with company selector, refresh, cross-company duplicate masters drawer, setup guide drawer, and clean horizontal navigation pills across all 9 sub-masters.
+  - All drawers adhere strictly to `SideDrawer.tsx` (50% desktop slide-over right drawer).
+  - 100% database-driven with zero static mock values.
+  - Verified 0 TypeScript compilation errors (`npx tsc --noEmit`) and 0 backend build errors (`dotnet build HrmsSys.sln`).
   - `contract-types`: Full-time, locum, probation, intern, consultant contract types
   - `pay-components`: Earning vs deduction formulas, taxable flags, statutory rules
   - `cost-centres`: Accounting codes, cost allocations
