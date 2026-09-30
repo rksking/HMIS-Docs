@@ -5,18 +5,87 @@
 ---
 
 ## Table of Contents
-1. [Overview & Core Architecture](#overview--core-architecture)
-2. [Section A: Backend Implementation (.NET Core)](#section-a-backend-implementation-net-core)
+1. [Key Azure Blob Storage & Document Features](#key-azure-blob-storage--document-features)
+   - [Backend Storage & Security Features](#1-backend-storage--security-features)
+   - [Frontend Document & Viewer Features](#2-frontend-document--viewer-features)
+2. [Overview & Core Architecture](#overview--core-architecture)
+3. [Section A: Backend Implementation (.NET Core)](#section-a-backend-implementation-net-core)
    - [1. Storage Container Security & Configuration](#1-storage-container-security--configuration)
    - [2. Azure Blob Virtual Folder Structure](#2-azure-blob-virtual-folder-structure)
    - [3. Backend Project File Structure](#3-backend-project-file-structure)
    - [4. Step-by-Step Code Flow: Uploading Documents](#4-step-by-step-code-flow-uploading-documents)
    - [5. Serving Documents via Custom URLs (Stream, Not Direct Blob)](#5-serving-documents-via-custom-urls-stream-not-direct-blob)
-3. [Section B: Frontend Implementation (Next.js / React)](#section-b-frontend-implementation-nextjs--react)
+4. [Section B: Frontend Implementation (Next.js / React)](#section-b-frontend-implementation-nextjs--react)
    - [1. Frontend Project File Structure](#1-frontend-project-file-structure)
    - [2. Document Upload Component (Drawer / Form)](#2-document-upload-component-drawer--form)
    - [3. Advanced Document Viewer Modal (View, Zoom, Rotate, Download, Print)](#3-advanced-document-viewer-modal-view-zoom-rotate-download-print)
-4. [Section C: Production Checklist & Gotchas](#section-c-production-checklist--gotchas)
+5. [Section C: Production Checklist & Gotchas](#section-c-production-checklist--gotchas)
+
+---
+
+## Key Azure Blob Storage & Document Features
+
+### 1. Backend Storage & Security Features
+* **Zero-Trust Private Container (`PublicAccessType.None`)**:
+  * Configured in `AzureBlobStorageService.cs`. Direct access to raw Azure Blob storage URLs by anonymous clients returns `403 Forbidden`. No public access is permitted.
+* **Auto-Provisioning Container**:
+  * Uses `_container.CreateIfNotExists(PublicAccessType.None)` during service initialization so the container is provisioned automatically without manual cloud portal intervention.
+* **Hierarchical Virtual Folder Partitioning**:
+  * Simulates directory trees via `/` delimiters to cleanly isolate files across domains:
+    * **User KYC Documents**: `userdocument/{userId}/documents/{guid}_{fileName}`
+    * **Document Requests**: `ShaDocuments/{memberId}/{requestId}/{guid}_{fileName}`
+    * **SHA Member Records**: `ShaMembers/{memberId}/{guid}_{fileName}`
+    * **Policy Contracts**: `policies/{guid}_{fileName}`
+* **Collision Protection (GUID Salting)**:
+  * Uploads prepend a `Guid.NewGuid()` to every blob name (`{guid}_{fileName}`) so identical filenames uploaded by different users never collide or overwrite each other.
+* **Smart GUID Stripping on Download/Stream**:
+  * When downloading or streaming, the service parses the blob name, identifies the GUID prefix, and strips it (`parts[1]`) so clients always receive their clean, original filename.
+* **Custom Backend URL Streaming (Zero Direct Blob Exposure)**:
+  * Document access is routed exclusively through custom backend controller endpoints:
+    * **Preview (Inline)**: `GET /api/UserDocuments/view/{id}`
+    * **Download (Attachment)**: `GET /api/UserDocuments/download/{id}`
+  * The backend verifies authentication, authorization, and soft-delete flags before fetching from Azure.
+* **Memory-Efficient Streaming (`DownloadStreamingAsync`)**:
+  * Files are piped directly from Azure Blob Storage into the ASP.NET Core HTTP response stream without buffering large byte arrays into server RAM.
+* **Automatic MIME Type Resolution**:
+  * If a file was saved without an explicit Content-Type or as generic `application/octet-stream`, the service automatically infers the correct MIME type based on file extension (`.pdf`, `.png`, `.jpg`, `.webp`, `.docx`, etc.).
+* **Multi-Domain Module Integration**:
+  * Blob operations are integrated across 4 specialized services:
+    1. `UserDocumentService.cs`: User-level KYC and identity documents.
+    2. `DocumentRequestService.cs`: Admin-requested member verification documents.
+    3. `MedicalDocumentService.cs`: Member health documents.
+    4. `PolicyDocumentService.cs`: Policy schedules and contract PDFs.
+
+### 2. Frontend Document & Viewer Features
+* **Authenticated Secure Blob Retrieval**:
+  * Standard `<img>` and `<iframe>` HTML tags cannot send HTTP `Authorization: Bearer <token>` headers.
+  * In `DocumentViewerModal.tsx`, the frontend fetches the file stream via Axios using `responseType: "blob"` and converts it into an in-memory browser URL using `URL.createObjectURL(res.data)`.
+* **Memory Leak Protection (`revokeObjectURL`)**:
+  * Automatically revokes created object URLs when the modal closes or changes document to free browser memory immediately.
+* **Dynamic File Type Detection**:
+  * Inspects `Content-Type` headers and file extension fallbacks to determine display mode (`image`, `pdf`, or `other`).
+* **Interactive Image Manipulation**:
+  * **Zoom In**: Scales up by +25% increments (up to 300%).
+  * **Zoom Out**: Scales down by -25% increments (down to 50%).
+  * **Rotate 90°**: Rotates orientation (`0°`, `90°`, `180°`, `270°`) using CSS transforms.
+  * **Reset**: Restores default 100% zoom and 0° rotation.
+* **Native PDF Previewing**:
+  * Renders PDFs in an embedded `<iframe src={`${fileBlobUrl}#toolbar=1`} />` with full native PDF search, zoom, and navigation toolbars.
+* **Cross-Format Printing**:
+  * **PDFs**: Creates a hidden iframe loaded with the blob URL and triggers `iframe.contentWindow.print()`.
+  * **Images**: Opens a lightweight print popup containing the rendered image and triggers `window.print()`.
+* **One-Click Download & New Tab**:
+  * Direct download via the backend attachment endpoint or synthetic `<a>` download tag.
+  * "Open Tab" action opens the full preview stream in an independent browser tab.
+* **Admin Verification & Review Workflow**:
+  * Integrated directly inside the viewer modal:
+    * Status badges (`Approved`, `Rejected`, `Uploaded`, `Pending`).
+    * Rejection reason capture and validation.
+    * Internal reviewer notes submission.
+* **Drag-and-Drop Upload Drawer**:
+  * Implemented in `DocumentUploadDrawer.tsx`.
+  * Client-side validation for file size (max 10MB) and file extensions (`.pdf`, `.doc`, `.docx`, `.jpg`, `.png`).
+  * Uploads using `multipart/form-data` with visual progress indicators.
 
 ---
 
