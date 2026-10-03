@@ -29,9 +29,9 @@
 | 18 | Clock-in selfie / geofence (by flag) | ✅ **Completed** (2026-10-03) — see §25 |
 | **§26** | Open items after Phase 2 (fallback salary, working days, countries, entitlement rate, 2 scripts) | ✅ **Completed** (2026-10-03) — see §26; 2 scripts ready, not run |
 | **Phase 3** | (§27 — gaps against the Staff Attendance Policy document) | |
-| 19 | Enforce proof of sickness on leave | ⏳ Pending — **next** |
-| 20 | Late escalation tiers + manager alert + leave-then-LOP | ⏳ Pending |
-| 21 | Early going treated as late coming | ⏳ Pending |
+| 19 | Enforce proof of sickness on leave | ✅ **Completed** (2026-10-03) — see §28 |
+| 20 | Late escalation tiers + manager alert + leave-then-LOP | ✅ **Completed** (2026-10-03) — see §29 |
+| 21 | Early going treated as late coming | ⏳ Pending — **next** |
 | 22 | Consecutive unauthorised absence alert | ⏳ Pending |
 | 23 | On Duty + Work From Home as real day types | ⏳ Pending |
 | 24 | Regularisation: deadline, two stages, over-quota escalation | ⏳ Pending |
@@ -1059,5 +1059,121 @@ switches it on.
 - Every bracketed number in the document ([10-15] minutes, [3] times, [5-7] days, [2] days) maps to something
   configurable **except** those two — so the policy can be filled in per company once the missing rules exist.
 
-### Next: Step 19 — enforce proof of sickness
-Smallest change with real compliance value: the fields are already there and HR already fills them in.
+### Step 19 — done, see §28
+
+## 28. Step 19 — completion notes (2026-10-03): supporting document (proof) for leave
+
+**Policy line:** §6 "Sick absence beyond [2] days requires a medical certificate."
+**Before:** six companies already had *proof required above 2 days* on sick (full / half), maternity and paternity leave,
+but **nothing enforced it**, the portal had no way to attach a file, and the request's proof field was never filled.
+
+### Delivered (all per leave type — Leave & Holidays → Leave Types → Application rules)
+| Setting | Effect |
+|---|---|
+| Supporting document required + **needed for more than N days** (existing fields) | Enforced. "More than": with 2, a 2-day request needs none, 3 days does. 0 = every request |
+| **Needed** — *Before final approval* (default) / *To submit the request* (new `proofTiming`) | Before final approval: the employee can submit and attach later (a certificate often comes after return); the manager can still recommend; **HR's final approval is refused until it is attached**. To submit: the request itself is refused without it |
+| **HR may approve without it, giving a reason** (new `proofWaiverByHr`, default off) | Only for a person holding the new permission **`leave.proof.waive`** (granted to the roles with `leave.manage`: Company HR, Group HR, HR VP, HR Manager, Super Admin, Developer — not to line managers). Name, time and reason are recorded on the request |
+
+| Area | Change |
+|---|---|
+| DB (`docs/db_changes.sql`, block "Policies Step 19") | `leave_types.proofTiming`, `proofWaiverByHr`; `leave_requests` + `proofFileName`, `proofContentType`, `proofUploadedAt`, `proofUploadedByName`, `proofWaivedByName`, `proofWaivedAt`, `proofWaiverReason`; `proofDocumentUrl` now holds the storage key; permission `leave.proof.waive`. Applied on local; re-run safe |
+| Storage (appsettings **`LeaveProof`**: `MaxBytes`, `AllowedTypes`, `StorageFolder` — no fallbacks) | Files go to the configured blob storage under `leave-proofs/{company}/{month}/`. Type and size are checked, and the bytes must really be a PDF / JPEG / PNG. The file is **never linked publicly** — it is streamed only to the employee, their line manager, and HR |
+| API | `POST /api/leave/apply-with-proof` (apply + file), `POST /api/leave/{id}/proof` (attach or replace while pending — the employee or HR), `GET /api/leave/{id}/proof` (view), `GET /api/leave/proof-settings` (limits for the picker). **Removed** the client-supplied `proofDocumentUrl` from apply, which would have let a caller point a request at someone else's file |
+| Portal (employee) | Apply drawer shows the rule for the chosen leave type and dates and takes the file; "My applications" shows the document, **"Supporting document needed — attach"** for pending requests, replace, and a waiver note |
+| HR apply / apply on behalf | Same picker and rule |
+| Approvals inbox and Tasks | Each leave shows a *Supporting document* panel: the rule, open the file, or — at the HR stage, when allowed — *Approve without it* with the reason in the remarks |
+| HR leave detail | Document link, "required and not attached", or the waiver with who and why |
+
+### Fixed on the way
+- **Approval refusals now reach the approver.** The approvals inbox and Tasks endpoints did not catch rule refusals, so
+  any refusal (this one, and comp-off's "the granter cannot approve") came back as a generic server error. Now the
+  reason is shown.
+- **Batch approval could save a refused item.** The inbox engine changed a leave's status *before* checking, and a batch
+  reused one database context — so a later item's save could have written the refused item's change. The proof check
+  now runs before anything changes, and each batch item is isolated; refused items are skipped and the message says how
+  many need attention.
+- **Batch result showed "processed undefined item(s)"** on both the Approvals and Tasks pages — the count is now read
+  correctly and the server's message is shown.
+
+### Verification
+- `dotnet build` ✔, `dotnet test` **96/96** ✔ (5 new: "more than" threshold, refusal only when needed to submit, final
+  approval needs the document, waiver needs type + permission + reason, file type / size / content), `tsc --noEmit` ✔.
+- Throwaway clone (dropped), MAKL Sick Leave (Full Pay), proof above 2 days, employee 20341:
+  - 2 days, no document → approved (not needed);
+  - 5 days, no document → manager recommends; **HR final refused**, status stays PENDING_HR; waiver refused (type
+    allows none); fake PDF refused; certificate attached → inbox shows it, download returns the PDF → approved;
+  - *To submit*: refused without a document, refused with a PDF labelled as PNG, accepted with the certificate (stored
+    under `leave-proofs/comp-makl-01/…`);
+  - waiver allowed: refused for HR **without** `leave.proof.waive`, refused with no reason, approved with a reason and
+    recorded;
+  - **batch [sick without document, annual]** → 1 of 2 processed; sick **still PENDING_HR**, annual approved.
+- Local DB: schema and the permission only; no request or leave type changed.
+
+### Things to know
+- **Add the `LeaveProof` section to the VM's appsettings** — without it, attaching a document fails with
+  "LeaveProof:… is not configured" (applying without a document still works).
+- Nothing changes for leave types without *proof required*. For the six companies that already ask for it on sick,
+  maternity and paternity leave, **HR final approval of those requests above 2 days now needs the document** — that is
+  the rule they had configured; switch on *HR may approve without it* where a waiver should be possible.
+- The one request pending on local (MAKL annual leave, 5 days) is unaffected — annual leave asks for no proof.
+- **Not checked in a browser.**
+
+### Step 20 — done, see §29
+
+## 29. Step 20 — completion notes (2026-10-03): late-coming escalation table, manager warning, leave-then-LOP
+
+**Policy line:** §4 — occurrences per month 1–3 *grace, no action*; 4–5 *warning / system alert to manager*; 6th
+onward *half-day leave deducted (or LOP if no balance)*.
+**Before:** two tiers only (N free late arrivals, then a pay deduction); no alert of any kind; the "half day" always came
+out of pay.
+
+### Delivered (all per company — Masters → Attendance Policies → *Late coming escalation*)
+| Setting | Effect |
+|---|---|
+| **Escalation table** (`late_penalty_tiers`) | Steps by the number of the late arrival in the attendance period: *Grace — no action* / *Warning — email to the manager, no deduction* / *Deduct* (with its own deduction or the company's). Steps must start at 1, follow on, and end open ("and above"). One click fills in the policy's own table. **No table = the previous rule, unchanged** — proven identical over all 7,813 late arrivals in the database |
+| **Arriving later than the grace minutes is deducted at once** (`lateBeyondGraceAlwaysDeducts`, default on = as before) | Off: every late arrival, however late, is just counted by the table / allowance |
+| New deduction **Leave first, then loss of pay** (`LEAVE_THEN_LOP`) | Takes **N days per penalised arrival** (`latePenaltyDays`, default 0.5) from a **chosen leave type** (`latePenaltyLeaveTypeId` — required whenever this deduction can happen). When that balance is short the days become loss of pay, deducted at the day rate. Decided arrival by arrival, oldest first; a day that stops being penalised (regularised, table changed) **gives its leave back** |
+| **Late arrival warning email** (event `LATE_ARRIVAL_WARNING`) | Template seeded per company (switched off). On / off, recipients (To / CC / BCC, the line manager, the employee), preview and send-now on the same section. Sent **once per late day** on a warning step (this attendance period and the previous one). Scheduled with the other notification checks when `Notifications:LateWarningCheckEnabled` is true. Placeholders include `{{LateOccurrence}}` and `{{NextStep}}` ("From late arrival number 6 in this period, 0.5 day(s) are taken from Annual Leave, or deducted from pay if the balance is short") |
+
+| Area | Change |
+|---|---|
+| DB (`docs/db_changes.sql`, block "Policies Step 20") | Company policy + `lateBeyondGraceAlwaysDeducts`, `latePenaltyLeaveTypeId`, `latePenaltyDays`; `attendance_records.lateTierAction`; `late_penalty_tiers`; `attendance_late_leave_charges` (one row per penalised day: LEAVE or LOP); `fn_LatePenaltyTiered`; `sp_SyncLateLeaveCharges` (called by daily processing); `sp_GetLateArrivalWarnings`; `sp_ProcessDailyAttendance` and `sp_SimulateAttendancePolicy` updated; warning template per company. Applied on local; re-run safe |
+| Payroll | Loss-of-pay penalty days in the attendance period → *Late Arrival Penalty — loss of pay (N day(s), M late arrival(s))* at the day rate. Leave-charged days cost nothing in pay |
+| HR Attendance Register | Shows the warning step, and for a leave-then-LOP day whether it came from leave (which type) or was loss of pay |
+| Simulator | Uses the saved table: shows the step for "late arrival #N" |
+| Shared code | The excess-hours email and the late warning now share one settings card, one send-log table (filtered per event) and one send-once routine |
+| Recount script | `policies_recount_past_leave.sql` keeps late-penalty leave days in `taken` |
+
+### Fixed on the way
+- **Late deduction mode was never validated** — any text was saved. Now only the four modes.
+- **Half-day card said "0.5 × (Basic ÷ 30)"**, but payroll uses the day rate from Payroll → Settings. Corrected.
+- **"Flat disciplinary fine" is never deducted by payroll** (it never was). The card now says *recorded only*, and the
+  table cannot choose it. Making it real needs a fine amount per company — not done, flagged.
+
+### Verification
+- `dotnet build` ✔, `dotnet test` **101/101** ✔ (5 new: the policy's table, gaps / overlaps / open ends refused,
+  actions and modes checked, when a leave type is required, the next-step wording), `tsc --noEmit` ✔.
+- Rolled-back check on local: with no table, the new rule equals the old one on **all 7,813 late arrivals**.
+- Throwaway clone (dropped), MAKL employee 10961, eight late arrivals in September, the policy's table, Annual Leave,
+  0.5 day, every arrival counted:
+  - gap in the table refused; leave-then-LOP without a leave type refused;
+  - **#1–3 grace, #4–5 warning, #6–8 deduct** → 3 × 0.5 = 1.5 days from Annual Leave (21 → 19.5);
+  - deduct step removed → all 1.5 days **given back**;
+  - only 0.75 day left → #6 from leave, **#7–8 loss of pay**; September payroll: *loss of pay (1 day, 2 late arrivals)*
+    = 2,000 (52,000 ÷ 26);
+  - simulator: #2 grace, #4 warning, #7 leave-then-LOP; 09:30 (beyond grace, counted) → #2 grace;
+  - warning preview: 47 warnings in MAKL; employee 10961 #4 and #5 → HR address + his line manager; next-step text as above.
+- Local DB: schema, procedures and the switched-off templates only — no table, no charge, no record changed.
+
+### Things to know
+- **Nothing changes until HR adds a table** for a company. The current setting everywhere is 15 grace minutes, 3 free
+  arrivals, then half a day's pay — and **arriving later than 15 minutes is deducted at once**. All late arrivals on
+  local are beyond 15 minutes, so with the policy's table HR will probably want *deducted at once* **off**, otherwise
+  the table only governs arrivals within the grace minutes.
+- The warning email must be **switched on with recipients** (the section shows it when the table has a warning step),
+  and for automatic sending set `Notifications:LateWarningCheckEnabled` in the VM's appsettings.
+- Leave charged by a late penalty counts as *taken* on that leave type, so it shows in the employee's balance and in
+  year-end carry forward like any taken day.
+- **Not checked in a browser.**
+
+### Next: Step 21 — early going treated as late coming
