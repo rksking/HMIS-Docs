@@ -1,6 +1,7 @@
 # Shifts, Roster, Attendance, Overtime, Leave & Holiday Policies — Research & Implementation Plan
 
-> Status: **revision 9 (2026-10-03) — Steps 1–6 completed, Steps 7–11 pending.**
+> Status: **revision 10 (2026-10-03) — Phase 1 (Steps 1–11) and Phase 2 (Steps 12–18) completed, plus the §26 clean-up.
+> Phase 3 (Steps 19–29, §27) is pending: the gaps against `docs/artifacts/Staff_Attendance_Policy_HRMS.docx`.**
 > Each step is reviewed/approved before code (follow.md #9). Every DB change goes to `docs/db_changes.sql` as a dated, idempotent block.
 
 ## Progress
@@ -26,6 +27,20 @@
 | 16 | Night-shift allowance | ✅ **Completed** (2026-10-03) — see §23 |
 | 17 | Shift restriction by criteria | ✅ **Completed** (2026-10-03) — see §24 |
 | 18 | Clock-in selfie / geofence (by flag) | ✅ **Completed** (2026-10-03) — see §25 |
+| **§26** | Open items after Phase 2 (fallback salary, working days, countries, entitlement rate, 2 scripts) | ✅ **Completed** (2026-10-03) — see §26; 2 scripts ready, not run |
+| **Phase 3** | (§27 — gaps against the Staff Attendance Policy document) | |
+| 19 | Enforce proof of sickness on leave | ⏳ Pending — **next** |
+| 20 | Late escalation tiers + manager alert + leave-then-LOP | ⏳ Pending |
+| 21 | Early going treated as late coming | ⏳ Pending |
+| 22 | Consecutive unauthorised absence alert | ⏳ Pending |
+| 23 | On Duty + Work From Home as real day types | ⏳ Pending |
+| 24 | Regularisation: deadline, two stages, over-quota escalation | ⏳ Pending |
+| 25 | Manager monthly attendance confirmation | ⏳ Pending |
+| 26 | Roster publication lead time | ⏳ Pending |
+| 27 | Shift swap requests | ⏳ Pending |
+| 28 | Post-lock changes with next-cycle arrears | ⏳ Pending |
+| 29 | Configurable approval SLA in working days | ⏳ Pending |
+| — | Optional: proxy-punch report, overtime pre-approval, native app | ⏳ Not scheduled |
 
 Sources: handwritten requirement note, `TA Master - Leave Master.pdf`, `TA Master - General Settings.pdf`, `ShiftRosterReport.xlsx`, the `/masters/shift-grace-policies` screen, and current code (entities, `ShiftService`, `AttendanceService`, `LeaveService`, `PayrollCalculationEngine`, `docs/dbscript/proc.sql`, seed data).
 
@@ -963,3 +978,86 @@ cannot be switched off, and the list shows how many use each one.
   the UAE gratuity accrual. Say the word and I will make those read the configured value only, as I did for the 75,000.
 - Go-live, unchanged: browser walk-through, run `db_changes.sql` on the VM, appsettings keys (`ShiftUploads`,
   `LeaveAccrual`, `Notifications`, `ClockEvidence`), real SMTP, HTTPS.
+
+---
+
+## 27. Phase 3 — gaps against the Staff Attendance Policy document (pending, 2026-10-03)
+
+**Source:** `docs/artifacts/Staff_Attendance_Policy_HRMS.docx` — "Staff Attendance Policy (HRMS)", v1.0, 12 sections.
+Every line below was checked in code and SQL, not inferred from these notes.
+**Implementation detail for each step lives in `docs/todo.md`** (items D1–D14) — that is the working file; this section is
+the record of what the document asks for and where we stand.
+
+### 27.1 Verdict
+9 of the 12 sections are substantially built. Of the document's specific rules, **19 are delivered**, **13 are partly
+built** and **10 are missing**. Several of the partial ones are configuration that exists but is never enforced — the
+same pattern as the employment-type leave entitlement rate closed in §26.
+
+### 27.2 Already delivered (no work needed)
+§2 shift master, patterns, weekly offs, per-department restriction (Step 17), work schedules, roster grid and both
+uploads · §3 biometric terminals, web clock in / out, clock-in access per employee, selfie and location check (Step 18),
+registered phone (Step 4b) · §4 grace minutes and N late arrivals a month, both configurable, Late flag beyond them ·
+§5 status codes P, A, HD, WO, PH, L · §6 unauthorised absence marked A and deducted as unpaid · §7 regularisation
+raised in the system, monthly quota, blocked in closed periods · §8 overtime types with their own rates, authorisation,
+limits per period and week, comp-off (manager grants → HR approves → credited with expiry, Step 15) · §9 approved leave
+overrides attendance, lock on the cut-off / payroll approval, unpaid days, overtime and late deductions flowing to
+payroll · §10 employee and HR duties (portal, masters, Exceptions Queue, close month) · §11 audit trail.
+
+### 27.3 Partly built — the rule exists but does not behave as written
+| Policy line | Today | Missing |
+|---|---|---|
+| §6 Sick absence beyond N days needs a medical certificate | Leave types hold *requires proof* + *proof threshold days*; a request has a proof document field | **Nothing enforces it** — a 10-day sick leave with no certificate is accepted |
+| §4 "Half-day leave deducted (or LOP if no balance)" | The half-day penalty deducts half a day's **pay** at once | Never touches the leave balance, so "leave first, LOP only if short" never happens |
+| §3 Field duty via an on-duty request | Out Duty request exists and reaches the approvals inbox | Marks the day **plain Present with a text note** — invisible in reports; also hardcodes 09:00 / 17:00 / 480 minutes |
+| §5 LOP code | A payroll deduction line only | Not a day status code |
+| §7 "Manager approves, then HR verifies" | **Single step** — HR *or* the line manager approves | No second HR stage (leave has two; regularisation does not) |
+| §7 "Beyond N, HR head approval" | The cap **refuses** | No escalation to allow one above the cap |
+| §7 After cut-off "processed in the next cycle" | Refused outright | Not deferred |
+| §8 Overtime "pre-approved by manager and HR" | Authorised **after** the work | No pre-approval before the shift |
+| §9 Locked "after manager confirmation" | Lock is by date / payroll approval | No manager confirmation step at all |
+| §9 Post-lock changes "paid or recovered in the next cycle" | Everything refused after the lock | No HR override, no arrears |
+| §10 Manager "within 2 working days" | Inbox flags items overdue after 2 days | The 2 is **hardcoded**, counts **calendar** days, no reminder |
+| §3 "Mobile app" | Portal works on a phone; sign-in tied to a registered phone | No native app |
+| §10 "Payroll processes only locked attendance" | Payroll reads the period, locks it on approval | Does not *require* a prior lock |
+
+### 27.4 Missing outright
+| Policy line | Note |
+|---|---|
+| §4 Tier "4–5 occurrences: warning / alert to manager" | The document's table has **three** tiers; the system has two. **No late alert of any kind exists** — the only email template in the system is the overtime limit one |
+| §4 "Early going treated the same as late coming" | Early departure minutes are recorded and shown, but carry no penalty, status or monthly allowance |
+| §5 OD (On Duty) status code | — |
+| §5 WFH (Work From Home) status code and request | Nothing anywhere |
+| §6 "Absence of 3+ consecutive days without information" | No detection, flag or alert |
+| §7 "Within 3 working days of the date" | No submission deadline |
+| §2 "Rosters published 5–7 days before the period starts" | No lead-time rule or warning |
+| §2 "Shift swaps need prior manager approval" | No swap feature; HR edits the roster directly, leaving no request trail |
+| §10 Manager confirms monthly attendance before cut-off | — |
+| §3 Proxy / buddy punching | The controls exist (selfie, geofence, registered phone) but no report flags suspected proxy punching |
+
+### 27.5 Steps (worst first — the rules staff and auditors actually feel)
+| Step | Scope | Closes |
+|---|---|---|
+| 19 | Enforce proof of sickness (`requiresProof` / `proofThresholdDays` + attachment, optional HR waiver) | §6 partial |
+| 20 | Late escalation tiers (`late_penalty_tiers`), `LATE_WARNING` alert to the manager, new `LEAVE_THEN_LOP` deduction mode | §4 missing + partial |
+| 21 | Early going mirrored on late (`fn_EarlyPenalty`, own grace / allowance / mode, own payslip line) | §4 missing |
+| 22 | Consecutive unauthorised absence: threshold, Exceptions Queue filter, `ABSENCE_ESCALATION` alert | §6 missing |
+| 23 | On Duty + Work From Home as real day types (`attendance_day_requests`), Out Duty times from the shift instead of 09:00 / 17:00 / 480 | §3 / §5 |
+| 24 | Regularisation: window in working days, two stages (manager → HR), over-quota escalation role | §7 |
+| 25 | Manager monthly attendance confirmation, optionally required before the lock | §9 / §10 |
+| 26 | Roster publication lead time (warn, and show the publish-by date) | §2 |
+| 27 | Shift swap requests (colleague accepts → manager approves → roster days exchanged, Step 17 restriction reused) | §2 |
+| 28 | Post-lock change with HR approval → `payroll_arrears` picked up by the next run | §9 |
+| 29 | Approval SLA per company and module, counted in working days, with reminders | §10 |
+| — | Not scheduled: proxy-punch report, overtime pre-approval, native mobile app | §3 / §8 |
+
+Every new number is a per-company setting, and every default keeps today's behaviour, so nothing changes until HR
+switches it on.
+
+### 27.6 Two things found while checking
+- **Hardcoded numbers**, against follow.md #10: Out Duty defaults to `09:00` / `17:00` / `480` minutes, and the
+  approval SLA is a hardcoded `slaDays = 2` in `ApprovalsService`. Both are fixed by Steps 23 and 29.
+- Every bracketed number in the document ([10-15] minutes, [3] times, [5-7] days, [2] days) maps to something
+  configurable **except** those two — so the policy can be filled in per company once the missing rules exist.
+
+### Next: Step 19 — enforce proof of sickness
+Smallest change with real compliance value: the fields are already there and HR already fills them in.
