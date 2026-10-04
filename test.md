@@ -1,7 +1,8 @@
 # Shifts, Roster, Attendance, Overtime, Leave & Holiday Policies — Research & Implementation Plan
 
-> Status: **revision 10 (2026-10-03) — Phase 1 (Steps 1–11) and Phase 2 (Steps 12–18) completed, plus the §26 clean-up.
-> Phase 3 (Steps 19–29, §27) is pending: the gaps against `docs/artifacts/Staff_Attendance_Policy_HRMS.docx`.**
+> Status: **revision 11 (2026-10-04) — Phase 1 (Steps 1–11), Phase 2 (Steps 12–18), the §26 clean-up and Phase 3
+> (Steps 19–29, §27 — the gaps against `docs/artifacts/Staff_Attendance_Policy_HRMS.docx`) are all completed.
+> What comes next: §41.**
 > Each step is reviewed/approved before code (follow.md #9). Every DB change goes to `docs/db_changes.sql` as a dated, idempotent block.
 
 ## Progress
@@ -38,8 +39,11 @@
 | 25 | Manager monthly attendance confirmation | ✅ **Completed** (2026-10-04) — see §36 |
 | 26 | Roster publication lead time | ✅ **Completed** (2026-10-04) — see §37 |
 | 27 | Shift swap requests | ✅ **Completed** (2026-10-04) — see §38 |
-| 28 | Post-lock changes with next-cycle arrears | ⏳ Pending — **next** |
-| 29 | Configurable approval SLA in working days | ⏳ Pending |
+| 28 | Post-lock changes with next-cycle arrears | ✅ **Completed** (2026-10-04) — see §39 |
+| 29 | Configurable approval SLA in working days | ✅ **Completed** (2026-10-04) — see §40 |
+| 30 | Browser walkthrough of Phase 3 | ⏳ Next |
+| 31 | Static values clean-up (core) + approvals only in /task + §26 scripts applied | ✅ **Completed** (2026-10-04) — see §42 |
+| 31b | Full sweep of remaining hardcoded KES / KE / Kenya / comp-001 (≈200 backend, ≈250 frontend lines) | ⏳ Planned — see §42 |
 | — | Optional: proxy-punch report, overtime pre-approval, native app | ⏳ Not scheduled |
 
 Sources: handwritten requirement note, `TA Master - Leave Master.pdf`, `TA Master - General Settings.pdf`, `ShiftRosterReport.xlsx`, the `/masters/shift-grace-policies` screen, and current code (entities, `ShiftService`, `AttendanceService`, `LeaveService`, `PayrollCalculationEngine`, `docs/dbscript/proc.sql`, seed data).
@@ -1568,4 +1572,190 @@ swap was raised.
 - **No email** to the colleague or the manager yet. The colleague sees the request on *My Shift Swaps*.
 - **Not checked in a browser.**
 
-### Next: Step 28 — Post-lock changes with next-cycle arrears
+### Step 27 follow-ups (2026-10-04)
+- **Swap emails**: three new notification events using the existing framework (per company: on/off, template,
+  recipients, send-once log). Each company gets a starting template for each; all are **off** until HR switches them on.
+  - `SHIFT_SWAP_REQUESTED`: "employee" = the colleague who was asked.
+  - `SHIFT_SWAP_ACCEPTED`: "employee" = the requester; "line manager" = the requester's manager.
+  - `SHIFT_SWAP_DECIDED`: one email to each employee (declined, approved or rejected).
+  - Placeholders: RequesterName, ColleagueName, SwapReference, SwapDates, SwapDays, Reason, Outcome, DecidedBy, Remarks.
+  - Checked on a clone: 4 emails logged SENT. The configured SMTP is the capture-only `smtp.ethereal.email`, so nothing
+    reached a real inbox.
+- **Roster grid**: a day changed by a swap shows a violet dot; hovering shows "Shift swap SW-…". A planner's own edit
+  of that day clears the note.
+- `PayrollController` approve returns **404** (was 500) for a month with no payroll run.
+- The menu icon map now knows `ClipboardCheck` (the Step 25 menu was showing the default icon) and `RotateCcw`.
+- My clone backup files were removed from the SQL data folder.
+
+### Step 28 — done, see §39
+
+## 39. Step 28 — completion notes (2026-10-04): changes after the lock, with arrears
+
+Staff Attendance Policy §9 ("changes after the lock require HR approval and are paid or recovered in the next cycle").
+Closes todo B10 (D10).
+
+**Before:** once a month was locked, every change was refused. There was no way to put a mistake right.
+
+### Delivered
+| Who | What |
+|---|---|
+| **Payroll / HR** — Payroll → **Arrears (after lock)** (`/payroll/arrears`) | **Raise arrear**: employee, **locked** month corrected, optional day, **pay back** or **recover**, measured in **days** (at the paying payroll's day rate; half days allowed) or a **fixed amount**, and a reason (shown on the payslip). Refused for a month that is still open ("correct the attendance or leave directly") and for a day outside that month's attendance period |
+| **Approver** — same page | **Approve / Reject** with remarks. Needs `payroll.arrears.approve`, and **must not be the person who raised it**. Approval sets the **payroll month that pays it** = the first month after the corrected one that is not locked |
+| **Payroll run** | Approved arrears of the month appear on **their own payslip lines**: "Arrears paid – 2026-09 (12 Sep), 1 day(s): …" as an earning (taxable like other pay), or "Arrears recovered – …" as a deduction. Day-based arrears use **that run's** day rate. Running the payroll again recalculates them; a cancelled arrear drops out |
+| **Payroll approval** | **Refused** while an approved arrear of the month is not in the computed payroll (approved after it was computed, or the employee was left out), or a computed arrear was cancelled since. The message says to run payroll again. On approval the arrears become **Settled** (PAID) |
+| **List** | Filter by status. Shows the amount and day rate once computed, and whether an approved arrear is already in the computed payroll |
+
+**The locked month is not changed**: its attendance, payslips and totals stay as they were paid. The arrears list and
+the audit log (`ARREAR_RAISED / _APPROVED / _REJECTED / _CANCELLED`) are the record.
+
+| Area | Change |
+|---|---|
+| DB (`docs/db_changes.sql`, block "Policies Step 28") | `payroll_arrears`; permissions `payroll.arrears.view` (from `payroll.view`), `payroll.arrears.manage` (from `payroll.run` / `payroll.process` / `payroll.edit`), `payroll.arrears.approve` (from `payroll.approve`), 4 roles each on local; menu **Payroll → Arrears (after lock)**. Applied twice on local |
+| API | `GET api/payroll/arrears?status=`, `GET …/employees?search=`, `POST api/payroll/arrears`, `POST …/{id}/decide`, `POST …/{id}/cancel` |
+| Code | `PayrollArrearRules` (target month, amount, label, who decides, approval check), `PayrollArrearService`, `PayrollArrearsController`; `PayrollService` run (lines) and approve (check, settle). Frontend: `modules/payroll/arrears/*` |
+
+### Verification
+- `dotnet build` ✔, `dotnet test` **132/132** ✔ (6 new: target month skips locked months; days × day rate or fixed;
+  input refusals; another person with the permission decides; payroll approval refused until every approved arrear is
+  in the run; payslip label), `tsc --noEmit` ✔.
+- Throwaway clone (dropped), comp-makl-01. Clone-only setup:
+  - Nobody in this company has a salary, so the company was set to "use a default amount" (60,000).
+  - The `hr` login was given `payroll.arrears.approve` and the superadmin password.
+- Results:
+  - September approved → locked.
+  - Raise for October (open) → refused. A September arrear dated 15 Oct → refused.
+  - Raised: pay back 1 day (12 Sep), recover 500. The raiser approving their own → refused. `hr` approves → paid in **October**.
+  - October run → payslip lines "Arrears paid … 1 day(s)" = **2,307.69** (the day rate) and "Arrears recovered … 500".
+  - A third arrear (pay 300) approved after the run → approving October **refused** ("1 approved arrear(s) … not in this
+    payroll yet"). Run again → 300 line added → approved → all three **Settled**.
+  - A new arrear on the now-locked October → paid in **November**.
+
+### Things to know
+- The `hr` login on local has **no payroll approval** permission. Only the 4 roles with `payroll.approve` can approve
+  arrears, and someone else must raise them.
+- An arrear for an employee who is **not paid** in the target payroll (inactive, or no salary in SKIP mode) blocks that
+  payroll's approval until it is cancelled. That is on purpose, so nothing is silently dropped.
+- Arrears are raised **by hand**. A correction of a locked day does not compute the amount from attendance
+  automatically; HR enters days or an amount.
+- Statutory figures (PAYE etc.) are worked out on the paying month's pay, including the arrears. Nothing is spread back
+  to the locked month.
+- **No email** on raise or decision yet.
+- **Not checked in a browser.**
+
+### Step 29 — done, see §40
+
+## 40. Step 29 — completion notes (2026-10-04): approval deadlines in working days, with reminders
+
+Staff Attendance Policy §10 ("approve or reject within 2 working days"). Closes todo B11 (D11). Last step of Phase 3.
+
+**Before:** the inbox flagged leave and punch corrections "overdue" after a hardcoded **2 calendar days** (`slaDays = 2`)
+and showed "Within 48h". Other requests had no deadline, and no reminder was ever sent.
+
+### Delivered
+| Who | What |
+|---|---|
+| **HR** — Masters → **Approval Deadlines** (`/approval-deadlines`) | Working days to decide, **per module**: leave, punch corrections, on duty / WFH, shift swaps, overtime, comp-off. Empty = no deadline. Every company starts at **2** (the policy). **Show overdue now** (preview, nothing sent) and **Send reminders now** list each overdue item with the stage, due date, days late and reminder status |
+| **Inbox** (Approvals, Task Hub, decision drawers) | *Due 6 Oct* / **Overdue** / *No deadline* instead of "Within 48h". The due date is the Nth **working day after the stage started**, counted on the **employee's own schedule**: weekly offs and holidays are skipped, and a day with no schedule counts. Each stage has its own clock: HR's starts when the manager approved (punch corrections, on duty / WFH); a shift swap's starts when the colleague accepted. Leave counts from submission for both stages (there is no stage time stored) |
+| **Reminders** — email event **`APPROVAL_OVERDUE`** (Masters → Email Templates; starting template per company, **off**) | **Once a day per overdue item.** "Line manager" ticked → the employee's reporting manager for items at the **manager stage**. The **To** list (HR) gets **every** overdue item = the escalation. Scheduled with the other alerts when `Notifications:ApprovalReminderCheckEnabled` is true (appsettings, default false); otherwise use *Send reminders now* |
+
+| Area | Change |
+|---|---|
+| DB (`docs/db_changes.sql`, block "Policies Step 29") | `approval_sla_settings` (company × module, workingDays 1–60 or NULL), seeded 2 for 15 companies × 6 modules; permission **`approvals.sla.manage`** (7 roles with `approval_matrix.manage`); menu **Masters → Approval Deadlines** (view: `approval_matrix.view`); `APPROVAL_OVERDUE` template per company. Applied twice on local |
+| API | `GET/PUT api/approval-sla`, `POST api/approval-sla/reminders?dryRun=` |
+| Code | `ApprovalSla` (modules, due date, working day, pending items of a company, calculator), `ApprovalSlaService`, `ApprovalSlaController`, `NotificationService` reminder run, background-service switch; `ApprovalsService` uses it for every employee request (the two `slaDays = 2` removed). Frontend: `modules/approvals/deadlines/*`, inbox labels |
+
+### Verification
+- `dotnet build` ✔, `dotnet test` **137/137** ✔ (5 new: over a weekend; over a public holiday; no working day = no
+  deadline; off days and holidays from the schedule; inbox types → modules), `tsc --noEmit` ✔.
+- Throwaway clone (dropped), comp-makl-01, the one pending leave (HR stage). The reminder was switched on in the clone
+  only, To = a test address:
+  - Submitted Tue 22 Sep → due **Thu 24 Sep**, **overdue**.
+  - Moved to Fri 2 Oct → due **Mon 5 Oct** (this employee works Saturdays), not overdue.
+  - Show overdue → 1 item, *would be sent* to the HR address. Send → **sent**. Send again the same day → **already sent today**.
+  - Deadline 61 → refused. Leave cleared → *no deadline*.
+
+### Things to know
+- Requisitions, offers and payroll keep their own due dates (from their approval matrix steps, else 2 calendar days).
+  Not changed here.
+- The employee's schedule is read once per inbox item. That is fine for today's volume (1 pending leave on local).
+  A very long inbox will be slower.
+- The manager-stage email path (reporting manager as recipient) was not exercised on the clone, because no
+  manager-stage item was pending. It is the same send code as the HR path.
+- > Code correction and static values — flagged, not changed: the inbox's **payroll** item is built with invented
+  values (`SubmittedById = "usr-003"`, `EmployeeId = "seed-emp-00648"`, "Nafula Otieno Mwangi (Finance)",
+  "KES" in the title) in `ApprovalsService`.
+- **Not checked in a browser.**
+
+## 41. Where we are, and what is next (2026-10-04)
+
+**Done:** Phases 1, 2 and 3 (Steps 1–29) and the §26 clean-up. All Staff Attendance Policy gaps of §27 are closed.
+The management review artifact (https://claude.ai/artifact/7ZVmkjN5LcfnnBVWeGGgrP) has every step, the process
+diagrams and the "How to operate" guide.
+
+**Recommended next, in this order** (each one a separate step and chat session, following docs/follow.md):
+
+| # | Work | Why | Where to start |
+|---|---|---|---|
+| **30** | **Browser walkthrough of Phase 3** (Steps 19–29) on a DB clone, fixing what breaks | Every Phase 3 note says "Not checked in a browser" | the "How to operate" section of the artifact; run the app (`/run`) |
+| ~~31~~ | ~~Static values clean-up~~ — **done, see §42** | | `ShiftService.GetDashboardMetricsAsync` (285 / 85 / 120, growth %, "Nairobi General Hospital", `comp-001`); `ApprovalsService` payroll inbox item (usr-003, seed-emp-00648, KES); `PayrollService.RunPayrollAsync` country-name → code mapping (default KE) and `comp-001` statutory fallback |
+| 32 | **D12 Proxy punching report** (Phase 4, todo.md) | Policy §3, the only remaining policy gap | `docs/todo.md` D12 |
+| 33 | **D13 Overtime pre-approval** (Phase 4) | Policy §8 | `docs/todo.md` D13 |
+| 31b | **Full sweep of the remaining hardcoded values** (see §42 "Left for 31b") | User rule: never static currency/country/company | `grep -rnE '"KES"\|KES \{\|"KE"\|"Kenya"\|"comp-001"' backend frontend/src` |
+| — | **Open decisions for the user**: ~~merge the duplicate shifts and recount past leave~~ (applied 2026-10-04, §42); emails for arrears and approval-deadline changes; whether line managers should get logins (5 of 6 have none) | | §26, §36, §39 |
+
+**Working rules used in every step** (keep them): plan → code following the existing patterns → `docs/db_changes.sql`
+block (idempotent, run twice on local) → tests for the rules → `dotnet build`, `dotnet test`, `tsc --noEmit` →
+API checks **only on a throwaway DB clone** (`HRMSCore_StepTest`, test API on :5299, the clone dropped and its `.bak`
+removed afterwards) → completion notes here → update the artifact (rows, counts, How to operate, **diagrams**).
+
+
+## 42. Step 31 — completion notes (2026-10-04): no static values, approvals only in the Task hub, §26 scripts applied
+
+User rules given at the start of this step (saved as standing rules):
+- **Never static values.** Currency, country, company, people and numbers come from the masters (Company → Country
+  master). A new company in another country must work without code changes.
+- **All approvals are acted on in `/task`.** Only the assigned employee or role sees and acts; **developer and
+  superadmin** see and act on everything.
+
+| Area | Before | Now |
+|---|---|---|
+| Payroll country | Guessed from the company's country *name* (`INDIA→IN`… default `KE`) | Company country → **Country master** `isoCode2`; unknown country = clear error, no default |
+| Payroll currency | Statutory config's built-in `"KES"` won over the company (a Tanzania company would pay in KES) | **Company master currency** first, config second, else clear error. Verified on the clone: comp-nah-01 → TZ / TZS, comp-lch-01 → KE / KES |
+| Statutory config lookup | Company's own or the non-existent `comp-001` | Company's own config for the country, else any active config for that country |
+| Payroll DTO / entity defaults | `"KE"` / `"KES"` | empty — always filled from the masters |
+| Payroll screens | `currency \|\| "KES"` | the run's currency only; tax simulator country list and currency now come from the **Country master** (dropdown, "Company's own country" default); invented per-country sample salaries removed |
+| Approvals / Task payroll item | Fixed person "Nafula Otieno Mwangi (Finance)", usr-003, seed-emp-00648, "KES" | Company name + **company currency**; assigned to **anyone holding `payroll.approve`** (role `PAYROLL_APPROVER`) |
+| Requisition / offer items, matrix rule | "KES" | company currency |
+| Shifts dashboard | Invented 285 / 85 / 120 / 57 / 4, fake growth %, fake departments, "Nairobi General Hospital", fake alerts (KES 2,500, "15 surgical…"), fake master counts 42/4/4 | **Only real counts**; growth hidden (no history yet); staff-per-shift chart by real shift names; alerts and master table computed from data |
+| Task / Approvals / Payroll controllers | `CompanyId ?? "comp-001"` | empty = every company the user may see |
+
+**Who sees and acts on approvals** (`ApprovalVisibilityRules`, Infrastructure/Services):
+- Superadmin and developer: everything, every company (the inbox skips the tenant filter only for them).
+- Everyone else, **on every tab** (before: only on "Awaiting me"; HR/ADMIN roles saw everything): own submissions never;
+  reporting-manager stage → that manager; items assigned to their employee/user id; HR stage (`HR`, `HR_REVIEW`,
+  `HR_MANAGER`) → HR roles; finance stage → finance roles; payroll → `payroll.approve` holders; or the item names their role.
+- **Decide is guarded the same way**: acting on an item not in your list → 403 "not assigned to you or your role";
+  batch decide skips such items.
+- `/approvals` now redirects to `/task`; the dashboard link points to `/task`. (Both `/approvals` DB menu rows were
+  already hidden.)
+
+**§26 scripts applied on local** (user go-ahead 2026-10-04), after a safety backup
+`/var/opt/mssql/data/HRMSCore_Local_before_step31_merge.bak` inside the `sqlserver` container (delete it when happy):
+shifts **770 → 55**; attendance records (63,025) and assignments (3,867) unchanged; **0 orphans**. Leave recount:
+EMP-ADM-001 annual 24–26 Sep 2 → 3 days, balance 19 → 18.
+
+**Checks**: `dotnet build`, `dotnet test` **142 passed** (5 new `ApprovalVisibilityTests`), `tsc --noEmit` clean.
+API on a throwaway clone (`HRMSCore_StepTest`, :5299, dropped afterwards): superadmin and developer 4 items (all
+companies), HR 1 (HR-stage leave), finance 1 (finance-stage requisition), line manager / employee 0; employee and finance
+deciding the HR leave → 403, HR → success; Shifts dashboard real numbers; payroll simulate TZ/TZS vs KE/KES.
+Not checked in a browser (Step 30).
+
+**Notes for later**
+- Amounts in inbox titles use the server culture's grouping (e.g. `10,15,999`); unchanged.
+- A non-super user stays inside their own company in the inbox (tenant filter), as before; e.g. the `finance` login
+  (company comp-lch-01) does not see comp-makl-01's payroll run.
+
+**Left for 31b (full sweep)** — about 200 backend and 250 frontend lines still use `KES` / `KE` / `Kenya` /
+`comp-001`: biggest in `OrgDtos`, `CompanyService`, `OnboardingService`, `AdminService`, `ConfigService`,
+`RequisitionService`, `ComplianceMasterService`, 10 more controllers' `?? "comp-001"`, entity defaults
+(`Company.Country = "Kenya"`, `Currency = "KES"`), and many frontend screens.
