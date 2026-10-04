@@ -36,9 +36,9 @@
 | 23 | On Duty + Work From Home as real day types | ✅ **Completed** (2026-10-04) — see §34 |
 | 24 | Regularisation: deadline, two stages, over-quota escalation | ✅ **Completed** (2026-10-04) — see §35 |
 | 25 | Manager monthly attendance confirmation | ✅ **Completed** (2026-10-04) — see §36 |
-| 26 | Roster publication lead time | ⏳ Pending — **next** |
-| 27 | Shift swap requests | ⏳ Pending |
-| 28 | Post-lock changes with next-cycle arrears | ⏳ Pending |
+| 26 | Roster publication lead time | ✅ **Completed** (2026-10-04) — see §37 |
+| 27 | Shift swap requests | ✅ **Completed** (2026-10-04) — see §38 |
+| 28 | Post-lock changes with next-cycle arrears | ⏳ Pending — **next** |
 | 29 | Configurable approval SLA in working days | ⏳ Pending |
 | — | Optional: proxy-punch report, overtime pre-approval, native app | ⏳ Not scheduled |
 
@@ -1469,4 +1469,103 @@ on confirmed attendance). Closes todo C9, B9, B13.
 - Flagged, not changed: `RunPayrollAsync` maps country names to codes in code ("INDIA" → IN, … default KE).
 - **Not checked in a browser.**
 
-### Next: Step 26 — Roster publication lead time
+### Step 26 — done, see §37
+
+## 37. Step 26 — completion notes (2026-10-04): roster publication lead time
+
+Staff Attendance Policy §2 ("rosters published at least 5–7 days before the roster period starts"). Closes todo C7 (D8).
+
+**Before:** a roster could be published any time; nothing showed or recorded how late it was.
+
+### Delivered
+| Who | What |
+|---|---|
+| **HR** — Attendance Policies → General settings (next to *Back-Dated Schedule Changes*) | **Roster Publish Lead Time (Days)**: 0–60, blank = no rule (default — nothing changes) |
+| **Roster planner** — Shifts → Roster → Roster Planner | A draft month shows **Publish by &lt;date&gt;** (red once passed). Publishing after that date shows a warning with the days late → **Publish anyway** or Cancel. **Never blocked.** A published / locked month that went out late shows a red **Published N day(s) late** badge |
+| **Shifts dashboard** (`/shifts`, needs `shifts.roster.view`) | **Roster Publication** card: next month's publish-by date with days left / overdue (or *Published*), and the last 12 rosters with publish-by, published on / by, **On time / N day(s) late** — this is HR's lateness report |
+
+| Area | Change |
+|---|---|
+| DB (`docs/db_changes.sql`, block "Policies Step 26") | `company_attendance_policies.rosterPublishLeadDays` (INT NULL); `shift_rosters.publishByDate` (DATE NULL), `.publishedDaysLate` (INT NULL). No new permission or menu. Applied twice on local |
+| API | `GET api/shifts/roster/publication-status` (`shifts.roster.view`); `GET api/shifts/roster/{month}` now also returns `publishLeadDays`, `publishByDate`, `publishedDaysLate`, `today`. `PUT api/config/attendance-policy` now returns **400 with the reason** for any invalid value instead of a 500 (all its existing checks) |
+| Code | `RosterLeadTimeRules` (publish-by date, days late) in `RosterService.cs`; publish stamps both columns and the audit row says "N day(s) after the publish-by date". Frontend: setting in `AttendanceSettingsTab`, warning in `RosterPlannerTab`, `components/RosterPublicationCard` on `ShiftsAndSchedulesView` |
+
+### Verification
+- `dotnet build` ✔, `dotnet test` **119/119** ✔ (4 new: no rule; early / on the day; late; lead time 0), `tsc --noEmit` ✔.
+- Throwaway clone (dropped), comp-lch-01, today 4 Oct:
+  - No rule → December published, nothing recorded (null).
+  - Lead time 61 or −1 → refused with the message (400).
+  - Lead time 7 → November: publish by 25 Oct, published → **on time (0)**. October: publish by 24 Sep, published →
+    **10 days late** (allowed). Publication status: next month November, publish by 25 Oct, both rows listed.
+
+### Things to know
+- "Today" is the **company's local date** (company time zone). Publishing on the publish-by date itself is on time.
+- Each publish re-stamps the lateness: *Back to draft* then publishing again records the later date. The audit log keeps
+  every publish.
+- The rule is read **at publish time**; changing the lead time later does not re-grade rosters already published.
+- Rosters published before this step show "—" (no rule recorded).
+- Only the roster planner warns. A roster uploaded from the sheet is still a draft until someone presses Publish, so it
+  is covered.
+- **No reminder email** before the publish-by date yet.
+- > Code correction and static values — flagged, not changed: `ShiftService.GetDashboardMetricsAsync` (the rest of the
+  Shifts dashboard) is full of invented fallbacks (285 staff, 85 night staff, 120 morning, growth % 16.7 / 25 / 33.3 /
+  42.5, "Nairobi General Hospital (C001)", `comp-001` for all companies). The new card does not use it. Recommend a
+  clean-up step.
+- **Not checked in a browser.**
+
+### Step 27 — done, see §38
+
+## 38. Step 27 — completion notes (2026-10-04): shift swap requests
+
+Staff Attendance Policy §2 ("shift swaps need prior approval from the reporting manager"). Closes todo C8 (D9).
+
+**Before:** no swap feature. HR edited the roster directly, so there was no request trail.
+
+### Delivered
+| Who | What |
+|---|---|
+| **Employee** — ESS → Attendance → **Swap Shift** | Pick a colleague (active, same company; search by name or ID) and dates. A table shows **both schedules** per date (shift code or *Weekly off*) and why a swap is not possible, or who will decide it. Reason required. Dates where both have the same thing are skipped |
+| **Colleague** — ESS → Attendance → **My Shift Swaps** | *Waiting for your answer*: the dates, both days, the reason → **Accept** / **Decline** with optional remarks. Accepting checks everything again |
+| **Requester** — same screen | Every swap with its stage, the colleague's answer and the manager's decision. **Cancel** while it is waiting for the colleague or the manager |
+| **Manager** — Approvals inbox / Task Hub (*Shift Swap* badge, module `SHIFT_CHANGE`) | Swaps of **their direct reports** after the colleague accepted. The drawer shows the date-by-date table. The summary says when the colleague reports to someone else. **Approve** checks everything again and **exchanges the two employees' days in the published roster**; past or today's days are re-processed. Decisions appear in the inbox history and the audit log (`SHIFT_SWAP_APPROVED` / `_REJECTED`) |
+| **No reporting manager** | Decided by holders of **`shifts.roster.manage`** (the roster planners). Nobody decides a swap they are part of |
+
+**Refused (preview, submit, accept and approve):** a date already past; dates in two months; the month's roster not
+published or **locked**; a **closed attendance period**; a holiday; a day with no shift; a day with an HR date
+override; either employee **not allowed the other's shift** (shift restriction, Step 17); leave applied (pending or
+approved); another open swap on those dates for either employee; on accept / approve, **the schedule changed** since the
+swap was raised.
+
+| Area | Change |
+|---|---|
+| DB (`docs/db_changes.sql`, block "Policies Step 27") | `shift_swap_requests` (requester, colleague, from–to, reason, status `PENDING_COLLEAGUE → DECLINED / PENDING_MANAGER → APPROVED / REJECTED`, `CANCELLED`, colleague answer, manager decision); `shift_swap_request_days` (per date: each side's day type and shift when raised). **No new permission or menu**: employees use `portal.me.view`; fallback deciders `shifts.roster.manage`. Applied twice on local (new empty tables only) |
+| API | `GET api/me/shift-swaps/colleagues?search=`, `GET …/preview?colleagueEmployeeId=&fromDate=&toDate=`, `GET/POST api/me/shift-swaps`, `POST …/{id}/respond`, `POST …/{id}/cancel` (portal.me.view; the employee comes from the login). Inbox: pending list, decision, history and the attendance pending count include swaps |
+| Code | `ShiftSwapRules` (checks, colleague answer, who decides, roster exchange), `ShiftSwapService`, `CompanyClock` (company-local today, now also used by the roster lead time). Frontend: `modules/portal/shift-swaps/*` (swap drawer, my swaps, days table), two buttons on the ESS attendance page, swap table in `ApprovalDecisionDrawer` |
+
+### Verification
+- `dotnet build` ✔, `dotnet test` **126/126** ✔ (7 new: happy path with same days skipped; nothing to swap / holiday /
+  no shift; restricted shift; past date and two months; locked / unpublished roster; colleague declines; only the
+  requester's manager decides), `tsc --noEmit` ✔.
+- Throwaway clone (dropped), comp-lch-01. Logins *employee* (Amina Gitau, manager Aditya Bhatia) and *peter.njoroge*
+  (manager Nafula Gitau). Their passwords were set **on the clone only** so they could sign in. November roster
+  published: Amina G1 / G1, Peter Weekly off / G10 on 10–11 Nov.
+  - Preview → both days listed, decided by Aditya Bhatia. Past date, two months, December (no roster) → each refused with its message.
+  - Submit → *waiting for colleague*; the same dates again → refused. Peter declines → a later accept is refused.
+  - Raised again → Peter accepts → only **Aditya** sees it (Peter: no access; superadmin: not the manager → 403).
+    The summary says Peter reports to Nafula Gitau. Aditya approves.
+  - Roster afterwards: **Amina Weekly off / G10, Peter G1 / G1**, remarks "Shift swap SW-…"; audit row written; inbox
+    history shows it.
+  - November locked → a new swap is refused ("roster is locked").
+
+### Things to know
+- Only the **requester's** manager approves. When the colleague has a different manager, that manager is not asked;
+  the inbox summary names them.
+- A swap writes **roster rows** for both employees. Someone on a regular shift with no roster row for that day gets one,
+  so the planner grid shows it in bold. It follows any later roster edit.
+- An approved swap cannot be undone by the employees. The roster planner edits the roster directly (back to draft is
+  not needed: published roster cells can be edited).
+- The roster grid does not show the "Shift swap SW-…" remark yet. It is stored on the roster day.
+- **No email** to the colleague or the manager yet. The colleague sees the request on *My Shift Swaps*.
+- **Not checked in a browser.**
+
+### Next: Step 28 — Post-lock changes with next-cycle arrears
