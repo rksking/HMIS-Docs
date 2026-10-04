@@ -1736,6 +1736,9 @@ User rules given at the start of this step (saved as standing rules):
   `HR_MANAGER`) → HR roles; finance stage → finance roles; payroll → `payroll.approve` holders; or the item names their role.
 - **Decide is guarded the same way**: acting on an item not in your list → 403 "not assigned to you or your role";
   batch decide skips such items.
+- **HR and the manager stage** (user decision, same day): HR roles also **see** requests still waiting for the
+  reporting manager, marked "View only · waiting for the manager" (no checkbox, no decision buttons; deciding → 403).
+  When the employee has **no reporting manager**, HR may act on that stage. Each item carries `canAct`.
 - `/approvals` now redirects to `/task`; the dashboard link points to `/task`. (Both `/approvals` DB menu rows were
   already hidden.)
 
@@ -1744,7 +1747,7 @@ User rules given at the start of this step (saved as standing rules):
 shifts **770 → 55**; attendance records (63,025) and assignments (3,867) unchanged; **0 orphans**. Leave recount:
 EMP-ADM-001 annual 24–26 Sep 2 → 3 days, balance 19 → 18.
 
-**Checks**: `dotnet build`, `dotnet test` **142 passed** (5 new `ApprovalVisibilityTests`), `tsc --noEmit` clean.
+**Checks**: `dotnet build`, `dotnet test` **143 passed** (6 new `ApprovalVisibilityTests`), `tsc --noEmit` clean.
 API on a throwaway clone (`HRMSCore_StepTest`, :5299, dropped afterwards): superadmin and developer 4 items (all
 companies), HR 1 (HR-stage leave), finance 1 (finance-stage requisition), line manager / employee 0; employee and finance
 deciding the HR leave → 403, HR → success; Shifts dashboard real numbers; payroll simulate TZ/TZS vs KE/KES.
@@ -1754,6 +1757,10 @@ Not checked in a browser (Step 30).
 - Amounts in inbox titles use the server culture's grouping (e.g. `10,15,999`); unchanged.
 - A non-super user stays inside their own company in the inbox (tenant filter), as before; e.g. the `finance` login
   (company comp-lch-01) does not see comp-makl-01's payroll run.
+
+**Also done:** the `?? "comp-001"` fallback removed from the 10 other controllers (that company does not exist, so
+nothing changes in behaviour). The pre-merge backup now lives in `docs/HRMSCore_Local_before_step31_merge.bak`
+(ignored by git through `*.bak`).
 
 **Left for 31b (full sweep)** — about 200 backend and 250 frontend lines still use `KES` / `KE` / `Kenya` /
 `comp-001`: biggest in `OrgDtos`, `CompanyService`, `OnboardingService`, `AdminService`, `ConfigService`,
