@@ -1696,13 +1696,14 @@ diagrams and the "How to operate" guide.
 
 | # | Work | Why | Where to start |
 |---|---|---|---|
-| **30** | **Browser walkthrough of Phase 3** (Steps 19–29) on a DB clone, fixing what breaks | Every Phase 3 note says "Not checked in a browser" | the "How to operate" section of the artifact; run the app (`/run`) |
+| ~~30~~ | ~~Browser walkthrough of Phase 3~~ — **skipped by decision (2026-10-04)**; screens are checked as they are used | | |
 | ~~31~~ | ~~Static values clean-up~~ — **done, see §42** | | `ShiftService.GetDashboardMetricsAsync` (285 / 85 / 120, growth %, "Nairobi General Hospital", `comp-001`); `ApprovalsService` payroll inbox item (usr-003, seed-emp-00648, KES); `PayrollService.RunPayrollAsync` country-name → code mapping (default KE) and `comp-001` statutory fallback |
-| 32 | **D12 Proxy punching report** (Phase 4, todo.md) | Policy §3, the only remaining policy gap | `docs/todo.md` D12 |
-| 33 | **D13 Overtime pre-approval** (Phase 4) | Policy §8 | `docs/todo.md` D13 |
+| ~~32~~ | ~~Last open decisions~~ — **done, see §44** (arrear emails, team confirmation reminder, line manager logins, overtime in the counters) | | |
+| ~~33~~ | ~~Emails for punch corrections and on duty / WFH~~ — **done, see §45** | | |
+| — | D12 Proxy punching report, D13 Overtime pre-approval (Phase 4, `docs/todo.md`) — **not planned** (2026-10-04) | | |
 | ~~31b~~ | ~~Full sweep~~ — **done, see §43**. **Before payroll is used again: HR must save a statutory setup per country** (none exist today) | | Payroll → Statutory setup |
 | 31c | Optional follow-ups of §43 "Left on purpose" (SRF region compliance options to masters, guide texts, seed login list) | | §43 |
-| — | **Open decisions for the user**: ~~merge the duplicate shifts and recount past leave~~ (applied 2026-10-04, §42); emails for arrears and approval-deadline changes; whether line managers should get logins (5 of 6 have none) | | §26, §36, §39 |
+| — | ~~Open decisions for the user~~ — all answered: merge / recount applied (§42); emails, manager logins and counters done (§44) | | |
 
 **Working rules used in every step** (keep them): plan → code following the existing patterns → `docs/db_changes.sql`
 block (idempotent, run twice on local) → tests for the rules → `dotnet build`, `dotnet test`, `tsc --noEmit` →
@@ -1830,3 +1831,73 @@ fields shown when the setup's country is KE, bank clearing-code formats per coun
 → masters (the Licensing Boards master exists); ~49 setup-guide texts with Kenyan examples; the quick-login list in
 `config/site.ts` (`seedAccounts`, real seed usernames with names).
 
+
+
+## 44. Step 32 — completion notes (2026-10-04): the last open decisions
+
+Your answers: **yes** to emails for arrears and for unconfirmed team attendance, **yes** to logins for line managers,
+**yes** to overtime in the approvals counters. With this step nothing is left open (Step 30 skipped; D12 / D13 not
+planned).
+
+### Delivered
+| Who | What |
+|---|---|
+| **Payroll approvers** — email **`ARREAR_RAISED`** | When an arrear is raised (Payroll → Arrears). To list = the approvers' addresses; "Employee" = the employee whose pay is corrected, "line manager" = their manager. Once per arrear |
+| **Person who raised it** — email **`ARREAR_DECIDED`** | On approve / reject: always to the raiser, plus the To list (and the employee when ticked). Says "Approved — paid / recovered in the October 2026 payroll" or "Rejected", by whom, remarks. Once per arrear |
+| **Managers** — email **`TEAM_CONFIRMATION_REMINDER`** | Only in companies that require confirmation before payroll. For each unconfirmed team of the period that **ended last**, once a day while unconfirmed: "line manager" ticked = the team's manager; the To list (HR) gets every team. Scheduled when `Notifications:TeamConfirmationReminderCheckEnabled` is true (default false) |
+| **HR** — Attendance → Confirm Team Attendance → All teams | **Show who would get it** (preview) / **Send reminders now** for the chosen period, with the status per team. **Create login** for a manager with *no login*: a login with the **Line Manager** role, temporary password shown once (and emailed when `EmployeeAccounts:SendCredentialsEmail` is on), changed at first sign-in. **Give manager access** for a manager whose login has the plain employee role (marked *login without manager access*): moved to Line Manager. Any other role is left alone (change it in Roles & Permissions). Needs `attendance.manage` **and** `employees.edit` |
+| **Task hub / Approvals counters** | *Total pending* now includes **overtime awaiting authorization** and **comp-off waiting for HR**. *Overdue* uses the **approval deadlines in working days** (Step 29) for every employee request instead of a fixed 2 days (offers keep 2 calendar days). The Attendance tab badge works (it read a field the server never sent) and the Leave tab includes comp-off. Compliance rate with nothing decided and nothing overdue = 100 % (was a fixed 98.5) |
+
+| Area | Change |
+|---|---|
+| DB (`docs/db_changes.sql`, block "Policies Step 32") | Starting templates `ARREAR_RAISED`, `ARREAR_DECIDED`, `TEAM_CONFIRMATION_REMINDER` per company (45 rows); no schema change. All three events are **off** until HR switches them on in Masters → Email Templates. Applied twice on local (second run 0 rows) |
+| Config | `EmployeeAccounts:LineManagerRoleCode` = `LINE_MANAGER` (role from the roles table); `Notifications:TeamConfirmationReminderCheckEnabled` = false |
+| API | `POST api/attendance/team-confirmation/reminders` `{periodDate, dryRun}`; `POST api/attendance/team-confirmation/managers/{employeeId}/login`; `GET …/team-confirmation` returns `managersWithoutAccess`; task / approvals metrics return `overtimePendingCount`, `compOffPendingCount`, `attendancePendingCount` |
+| Code | `NotificationService.NotifyArrearAsync`, team reminder run, `SendOnceAsync(alsoTo)`; `PayrollArrearService` raise / decide send the emails; `EmployeeAccountService.GiveLineManagerAccessAsync`; `ApprovalsService` counters + `CountOverdueRequestsAsync`; background service switch. Frontend: `TeamConfirmationView` (reminders, Create login / Give manager access, one-time credentials box), Task hub badges |
+
+### Verification
+- `dotnet build` ✔, `dotnet test` **153/153** ✔ (4 new: manager without login gets a Line Manager login, a second
+  time refused; employee-role login moved, another role refused; someone who manages nobody refused; arrear emails —
+  raised to the To list once, decided also to the raiser, amount with the company currency), `tsc --noEmit` ✔.
+- Throwaway clone (dropped, `.bak` removed), comp-makl-01, September, confirmation required:
+  - Reminder preview with the email off → *Email switched off* for all 6 teams; switched on (To = a test address,
+    line manager ticked) → *Would be sent* to HR + each manager's work email; the no-manager team to HR only.
+  - Create login for Trevor Mwamburi → Line Manager login, temporary password; again → "already signs in with the
+    Line Manager role"; signing in with it works and asks for a new password first.
+  - 3 overtime days set to pending → *Total pending* 4 → 5, Attendance badge 3, *Overdue* 1 → 4 (deadline 2 working days).
+
+### Things to know
+- Nothing is sent until HR switches each event on and sets its recipients.
+- Creating a login does **not** email the password unless `EmployeeAccounts:SendCredentialsEmail` is on; otherwise HR
+  hands it over (shown once).
+- Of the 6 comp-makl-01 teams, 4 managers have no login and one is the no-manager team; Ranmeet already has Line Manager.
+- **Not checked in a browser.**
+
+
+## 45. Step 33 — completion notes (2026-10-04): emails for punch corrections and on duty / work from home
+
+The last "No email … yet" notes (§34 on duty / WFH, §35 punch corrections) are closed. Shift swaps (§38) and arrears
+(§44) already had theirs.
+
+| Email event (Masters → Email Templates, **off** until switched on) | When | Who gets it |
+|---|---|---|
+| **`REGULARISATION_WAITING`** — Punch correction waiting for a decision | Submitted, and again when the manager approves (stage 2) | Manager stage: the employee's reporting manager ("line manager" ticked) + To list. HR / over-quota stage: the To list only |
+| **`REGULARISATION_DECIDED`** — Punch correction decided | Approved at the last stage, or rejected at any stage | The employee ("employee" ticked), their manager ("line manager"), + To list |
+| **`DAY_REQUEST_WAITING`** — On duty / WFH waiting | Submitted (also HR "apply on behalf"), and on reaching the HR stage | As above |
+| **`DAY_REQUEST_DECIDED`** — On duty / WFH decided | Approved or rejected (a cancelled request sends nothing) | As above |
+
+Each is sent **once per request and stage** (waiting) or once per request (decided), logged in the send log; a failed
+send is retried on the next event for that key. Placeholders: EmployeeName, EmployeeNumber, CompanyName, ManagerName,
+RequestType, RequestDates, Details (requested times / hours, place), Reason, Stage, Outcome, DecidedBy, Remarks.
+
+| Area | Change |
+|---|---|
+| DB (`docs/db_changes.sql`, block "Policies Step 33") | 4 starting templates per company (60 rows); no schema change. Applied twice on local (second run 0 rows) |
+| Code | `NotificationService.NotifyRegularisationAsync` / `NotifyDayRequestAsync` (shared `NotifyRequestAsync`); called from `AttendanceService.SubmitRegularisationAsync`, `DayRequestService` create, and the Tasks decision path in `ApprovalsService` |
+
+### Verification
+- `dotnet build` ✔, `dotnet test` **154/154** ✔ (1 new: on duty waiting → manager + To list, sent once per stage;
+  HR stage → To list only; approved → employee + manager + To list). No frontend change (the Email Templates page lists
+  events from the server).
+- Not run on a DB clone: the send path is the one already checked for shift swaps and arrears.
+- **Not checked in a browser.**
