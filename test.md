@@ -43,7 +43,7 @@
 | 29 | Configurable approval SLA in working days | ✅ **Completed** (2026-10-04) — see §40 |
 | 30 | Browser walkthrough of Phase 3 | ⏳ Next |
 | 31 | Static values clean-up (core) + approvals only in /task + §26 scripts applied | ✅ **Completed** (2026-10-04) — see §42 |
-| 31b | Full sweep of remaining hardcoded KES / KE / Kenya / comp-001 (≈200 backend, ≈250 frontend lines) | ⏳ Planned — see §42 |
+| 31b | Company registration from the Country master + "payroll not ready" + full sweep of hardcoded KES / KE / Kenya / company ids / demo data | ✅ **Completed** (2026-10-04) — see §43 |
 | — | Optional: proxy-punch report, overtime pre-approval, native app | ⏳ Not scheduled |
 
 Sources: handwritten requirement note, `TA Master - Leave Master.pdf`, `TA Master - General Settings.pdf`, `ShiftRosterReport.xlsx`, the `/masters/shift-grace-policies` screen, and current code (entities, `ShiftService`, `AttendanceService`, `LeaveService`, `PayrollCalculationEngine`, `docs/dbscript/proc.sql`, seed data).
@@ -1700,7 +1700,8 @@ diagrams and the "How to operate" guide.
 | ~~31~~ | ~~Static values clean-up~~ — **done, see §42** | | `ShiftService.GetDashboardMetricsAsync` (285 / 85 / 120, growth %, "Nairobi General Hospital", `comp-001`); `ApprovalsService` payroll inbox item (usr-003, seed-emp-00648, KES); `PayrollService.RunPayrollAsync` country-name → code mapping (default KE) and `comp-001` statutory fallback |
 | 32 | **D12 Proxy punching report** (Phase 4, todo.md) | Policy §3, the only remaining policy gap | `docs/todo.md` D12 |
 | 33 | **D13 Overtime pre-approval** (Phase 4) | Policy §8 | `docs/todo.md` D13 |
-| 31b | **Full sweep of the remaining hardcoded values** (see §42 "Left for 31b") | User rule: never static currency/country/company | `grep -rnE '"KES"\|KES \{\|"KE"\|"Kenya"\|"comp-001"' backend frontend/src` |
+| ~~31b~~ | ~~Full sweep~~ — **done, see §43**. **Before payroll is used again: HR must save a statutory setup per country** (none exist today) | | Payroll → Statutory setup |
+| 31c | Optional follow-ups of §43 "Left on purpose" (SRF region compliance options to masters, guide texts, seed login list) | | §43 |
 | — | **Open decisions for the user**: ~~merge the duplicate shifts and recount past leave~~ (applied 2026-10-04, §42); emails for arrears and approval-deadline changes; whether line managers should get logins (5 of 6 have none) | | §26, §36, §39 |
 
 **Working rules used in every step** (keep them): plan → code following the existing patterns → `docs/db_changes.sql`
@@ -1766,3 +1767,66 @@ nothing changes in behaviour). The pre-merge backup now lives in `docs/HRMSCore_
 `comp-001`: biggest in `OrgDtos`, `CompanyService`, `OnboardingService`, `AdminService`, `ConfigService`,
 `RequisitionService`, `ComplianceMasterService`, 10 more controllers' `?? "comp-001"`, entity defaults
 (`Company.Country = "Kenya"`, `Currency = "KES"`), and many frontend screens.
+
+
+## 43. Step 31b — completion notes (2026-10-04): company registration from the masters, "payroll not ready", full static-value sweep
+
+**User decisions (2026-10-04):** country is required and chosen from the Country master (no default); currency fills in
+from the country and may be changed but never left blank; at registration the company links to its country's tax setup;
+without one it is saved but **"payroll not ready"** and payroll refuses to run; existing companies get the same check.
+
+**Company registration** (`CompanyService`, `CreateCompanyDrawer`):
+- Create, bulk import and update validate the country against the **Country master** (name, ISO-2 or ISO-3; stored as
+  the master name). Missing or unknown country → 400 with a clear message; a bulk row with a bad country fails only that row.
+- Currency = the request's currency, else the **country's currency from the master**; blank → 400.
+- Time zone default `UTC` (was `Africa/Nairobi`); `CompanyTimeZoneResolver` fallback is `UTC` too (every company in the
+  DB has a valid time zone, so nothing changes today).
+- Form: country is a required dropdown from the master (flag + name); picking it fills the currency; currency options =
+  the country's currency + the Currency master.
+
+**Payroll not ready** (`CountryStatutoryLookup`, Infrastructure/Services):
+- A country's tax setup is shared: the company's own active statutory config for its country first, else **any active
+  config for that country** (reads past the tenant filter, so a company-scoped user finds it too).
+- `PayrollService.RunPayrollAsync` and `SimulateAsync` now **refuse** without a setup: "Payroll not ready: there is no
+  statutory (tax) setup for Kenya (KE). Add one under Payroll → Statutory setup first." (Before: an empty in-memory
+  config with Kenyan built-in values.)
+- `CompanyDto.PayrollReady` / `CompanyTableItemDto.PayrollReady` on every company list; the All Companies table shows an
+  amber **"Payroll not ready"** badge; the Company Setup dashboard's compliance card and insight count not-ready companies.
+- Statutory setup screen: GET with no setup returns an **empty** setup for the company's country and currency (was a
+  fake Kenyan one); saving fills country/currency from the company when blank. Country selector = Country master dropdown.
+- The engine: unknown country → generic engine with the setup's rates (was: Kenya rules); result currency = the setup's.
+- **Today the DB has 0 statutory configs, so payroll will not run for any company until HR saves one per country**
+  (one Kenya setup makes all 14 Kenyan companies ready; New Age needs a Tanzania one).
+
+**Sweep (backend):** all DTO/entity defaults `"Kenya"`/`"KES"`/`"KE"`/`"Kenyan"`/`"Nairobi"` → empty; every `comp-001` /
+`comp-lch-01` fallback removed (Letters no longer lets comp-lch-01 issue letters for other companies' employees);
+currency defaults (requisitions, matrix rules, offers, onboarding, loans, reports, emails) → **company currency**;
+invented data removed and replaced by real counts: **group dashboard** (fake facilities, 652/2,846 staff, trends,
+activities, insights), **employee dashboard** (documents, leave, attendance, payroll readiness, movement, recent
+activity, HR actions), **Org Masters dashboard** (groups, categories, headcount, completeness, alerts, lifecycle,
+countries), Company Setup / Group / Compliance country charts (flags and names from the Country master), demo users,
+audit rows and banks fallbacks, fake default reports (headcount, leave liability, absenteeism, statutory), fake
+letterhead seed, "Lifecare Hospitals"/"Caroline Nduta" in onboarding emails (now the candidate's company / "HR").
+Currency auto-seed now creates **only the company's own currency** as base (was 10 currencies with invented rates).
+
+**Sweep (frontend):** hardcoded company list in `config/site.ts` removed → `useCompanyMaster()`; new
+`useActiveCompany()` / `useCompanyCurrency()` and `useCountryMaster()` hooks; `formatKes` → `formatMoney(amount,
+currency)`; ~110 `|| "KES"`-style fallbacks emptied; "KES" labels on ~25 screens → company currency; currency selects
+→ Currency master; payroll country lists (run, statutory, simulator, config cards) and licensing board jurisdiction →
+Country master; phone prefix from the company's country; demo users, fake salary, fake addresses/emails/phones and
+"Africare/Lifecare" branding removed; public candidate portals use only the data their own endpoint returns.
+
+**Checks:** `dotnet build`, `dotnet test` **149 passed** (6 new `CompanyRegistrationTests`; `CurrencyMasterTests`
+rewritten for the company-currency seed), `tsc --noEmit` clean, no new rules-of-hooks errors. API on a throwaway clone
+(`HRMSCore_StepTest`, :5299, dropped afterwards): no country → 400; "Atlantis" → 400; Uganda → UGX, not ready, UTC;
+0 of 16 ready; run payroll and simulate → "Payroll not ready…"; empty statutory GET for comp-nah-01 = TZ/TZS, no bands;
+after saving a KE setup for comp-lch-01 → LIFECARE and MAKL ready, NEWAGE not; simulate for MAKL calculates; all
+dashboards 200. Not checked in a browser (Step 30).
+
+**Left on purpose (country rules, not defaults):** the per-country payroll formulas and their built-in fallback rates
+(`CalculateKenya`, India/UAE/TZ/ZM), the statutory summary report's Kenyan components (PAYE/NSSF/SHIF/AHL), Kenya-only
+fields shown when the setup's country is KE, bank clearing-code formats per country, M-Pesa/Airtel payment methods.
+**Follow-ups (31c):** requisition **Region** values (`AFRICA_KE`…) and the SRF drawers' Kenyan council/union option lists
+→ masters (the Licensing Boards master exists); ~49 setup-guide texts with Kenyan examples; the quick-login list in
+`config/site.ts` (`seedAccounts`, real seed usernames with names).
+
