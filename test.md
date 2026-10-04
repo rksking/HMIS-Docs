@@ -31,12 +31,12 @@
 | **Phase 3** | (§27 — gaps against the Staff Attendance Policy document) | |
 | 19 | Enforce proof of sickness on leave | ✅ **Completed** (2026-10-03) — see §28 |
 | 20 | Late escalation tiers + manager alert + leave-then-LOP | ✅ **Completed** (2026-10-03) — see §29 |
-| 21 | Early going treated as late coming | ⏳ Pending — **next** |
-| 22 | Consecutive unauthorised absence alert | ⏳ Pending |
-| 23 | On Duty + Work From Home as real day types | ⏳ Pending |
-| 24 | Regularisation: deadline, two stages, over-quota escalation | ⏳ Pending |
-| 25 | Manager monthly attendance confirmation | ⏳ Pending |
-| 26 | Roster publication lead time | ⏳ Pending |
+| 21 | Early going treated as late coming | ✅ **Completed** (2026-10-04) — see §30 |
+| 22 | Consecutive unauthorised absence alert | ✅ **Completed** (2026-10-04) — see §33 |
+| 23 | On Duty + Work From Home as real day types | ✅ **Completed** (2026-10-04) — see §34 |
+| 24 | Regularisation: deadline, two stages, over-quota escalation | ✅ **Completed** (2026-10-04) — see §35 |
+| 25 | Manager monthly attendance confirmation | ✅ **Completed** (2026-10-04) — see §36 |
+| 26 | Roster publication lead time | ⏳ Pending — **next** |
 | 27 | Shift swap requests | ⏳ Pending |
 | 28 | Post-lock changes with next-cycle arrears | ⏳ Pending |
 | 29 | Configurable approval SLA in working days | ⏳ Pending |
@@ -1176,4 +1176,297 @@ out of pay.
   year-end carry forward like any taken day.
 - **Not checked in a browser.**
 
-### Next: Step 21 — early going treated as late coming
+### Step 21 — done, see §30
+
+## 30. Step 21 — completion notes (2026-10-04): early going treated the same as late coming
+
+**Policy line:** §4 "Early going without approval is treated the same as late coming."
+**Before:** early departure was **never measured** — the only place producing it (the employee monthly view) returned a
+hardcoded 0 — and `shifts.earlyGraceMinutes` (10 on every shift) was read by nothing. (The §27 gap analysis said
+"recorded and displayed"; it was not even that.)
+
+### Delivered (per company — Attendance Policies → Late coming escalation → *Early going*)
+| Setting | Effect |
+|---|---|
+| **Treat early going** (`earlyGoingMode`) | *Not penalised* (default — measured and shown only, **nothing changes**) / *Like late coming, counted on its own* (`SEPARATE`) / *Like late coming, counted together with late arrivals* (`WITH_LATE`: 3 late + 3 early = the 6th occurrence). Either way it goes through the same Step 20 table (or the monthly allowance) and the same beyond-grace rule |
+| **Grace** (`earlyGoingGraceMinutes`) | Minutes before the shift end that are not counted; empty = **each shift's own `earlyGraceMinutes`** (finally used) |
+| **Deduction** (`earlyGoingDeductionMode`) | Empty = the same as late coming (the policy's wording), or its own: half day, minutes short, leave-then-LOP, flat fine |
+
+What counts as early going: leaving before the scheduled end on a working day of a **fixed** shift, **with a
+clock-out**, on a day that still earned a **full** day credit. FLEXI shifts have no fixed end; a missing clock-out is a
+missed punch; a day already paid as half or absent is short-paid once and is not charged again.
+
+| Area | Change |
+|---|---|
+| DB (`docs/db_changes.sql`, block "Policies Step 21") | Company policy + `earlyGoingMode`, `earlyGoingGraceMinutes`, `earlyGoingDeductionMode`; `attendance_records` + `earlyDepartureMinutes`, `isEarlyGoing`, `earlySequenceInMonth`, `isEarlyCovered`, `earlyPenaltyType`, `earlyTierAction`; `attendance_late_leave_charges.source` (LATE / EARLY, unique per record **and** kind — a day can carry both); `fn_EvaluateAttendanceDay` measures early departure; `sp_ProcessDailyAttendance` numbers late and early occurrences (own or shared count) and applies the table; `sp_SyncLateLeaveCharges` charges both kinds; simulator shows early going. Applied on local; re-run safe |
+| Payroll | Own lines: *Early Departure Penalty (N half-days)*, *… — loss of pay (N days)*, *… (N minutes short)* |
+| HR Attendance Register | "left N m early · #k", warning step, and the deduction / leave charge |
+| Simulator | The clock-out entered shows the early-going outcome with the saved settings |
+
+### Verification
+- `dotnet build` ✔, `dotnet test` **102/102** ✔, `tsc --noEmit` ✔.
+- With early going **off**, the late result of every late arrival is unchanged: 7,813 on local against the old rule,
+  and on a clone after reprocessing September all **184** MAKL late days equal the Step 20 numbering.
+- Throwaway clone (dropped), MAKL employee 20325 (3 late arrivals, 5 early departures of 51–59 min in September),
+  the policy's table, Annual Leave, every arrival counted:
+  - invalid mode, leave-then-LOP without a leave type, negative grace — all refused;
+  - **own count**: late #1–3 grace; early #1–3 grace, **#4–5 warning**;
+  - **shared count**: one count of 8 — early departures become #4–8: **#4–5 warning, #6–8 half a day from Annual Leave**;
+  - back to **off**: the 1.5 days **given back**, balance 21 again;
+  - a day carrying both a late and an early leave-then-LOP penalty → **two charges** (LATE and EARLY);
+  - early deduction *half a day's pay*, shared count, 4th onward → payslip *Early Departure Penalty (5 half-days)* =
+    5,000 (52,000 ÷ 26 ÷ 2 each).
+- Local: schema and procedures; every company **off**. Your running app's daily processing now fills
+  `earlyDepartureMinutes` (4,684 records so far) — measurement only.
+
+### Things to know
+- Early departures on local are real (51–59 min on several MAKL days), so switching a company on will produce warnings
+  and deductions straight away — preview it with the simulator and the Attendance Register first.
+- An *approved* early leave (the policy says "without approval") is a regularisation / short leave: approve the
+  regularisation and the day is reprocessed with the approved clock-out.
+- **Not checked in a browser.**
+
+### Step 22 — done, see §33
+
+## 31. ESS — the employee's own comp-off, overtime and night allowance (2026-10-04)
+
+**Reported:** an employee could not see comp-off, night allowance or overtime in their own account (ESS → My Leave).
+
+**Why:**
+1. **No company has a comp-off leave type yet.** Step 15 built comp-off but leaves the type to HR (Leave Types →
+   credited *From comp-off grants*). Without one a manager cannot grant comp-off at all.
+2. **No company has a night allowance rule yet** (Attendance → Night Allowance), so nobody qualifies.
+3. **There was no employee-facing view of any of the three.** Overtime existed (e.g. EMP-ADM-001: 1 Oct, OT1, 1 h 45 m
+   paid) but only HR could see it.
+
+**Delivered:** ESS → My Leave → new tab **Comp-off, Overtime & Night Allowance** (read-only, always the signed-in
+employee — the server takes the employee from the login):
+| Section | Shows |
+|---|---|
+| Comp-off | Balance per comp-off leave type (credited, taken, pending, available, expiry rule) and every grant: date worked, reason, days, granted by, waiting for HR / credited / rejected (with HR's reason), expiry. When the company has no comp-off type it says so |
+| Overtime | Per day: type and rate, time worked over, approved, paid, status (paid / waiting for approval / not approved, who decided); totals per type |
+| Night allowance | Qualifying nights and night time per rule, an estimate for per-night / per-hour rules (a % rule is worked out by payroll) |
+Period: the current pay (attendance) period by default, or any range up to a year. Once a comp-off type exists the
+comp-off balance also appears with the other balances on the first tab.
+
+API: `GET /api/me/comp-off`, `/api/me/overtime`, `/api/me/night-allowance` (`portal.me.view`, held by the employee
+roles). No DB change.
+
+**Verified on a throwaway clone (dropped):** before setup — "comp-off not set up", no night rules, overtime shown for
+the current period (1 Oct, OT1, 105 min paid); after HR created a comp-off type (60-day expiry) and a manager granted
+1 day for Sunday 27 Sep — *waiting for HR*, balance 0; after HR approved — **1 day available, expires 3 Dec 2026**; night
+rule added — *configured*, no qualifying nights (local attendance has no night punches). `dotnet build` ✔,
+`dotnet test` 102/102 ✔, `tsc` ✔. **Not checked in a browser.**
+
+**To see comp-off and night allowance for real, HR must set them up per company:** Leave Types → new type credited
+*From comp-off grants* (with its expiry / maximum per grant), and Attendance → Night Allowance → a rule.
+
+## 32. Starting setup — comp-off type and night allowance rule per company (2026-10-04)
+
+Asked: make comp-off and night allowance appear. Both need HR settings that no company had (§31).
+**Script:** `docs/policies_seed_compoff_night.sql` — optional, **review the values first** (they sit at the top as
+variables), re-run safe (a company that already has one is left alone). Not in `db_changes.sql`: these are HR settings
+and the night allowance pays money. **Run on local**: 15 comp-off types, 15 night rules (one each per company).
+
+| Created per company | Values (change on the screens afterwards) |
+|---|---|
+| Leave type **Compensatory Off** (`COMP_OFF`) — Leave & Holidays → Leave Types | Credited from approved comp-off grants; paid; each credit expires **60 days** after HR approves; a manager may grant at most **1 day** per day worked; the employee must have **attendance** on the day worked; that day's overtime is not paid as well; everyone eligible |
+| Rule **Night shift allowance** — Attendance → Night Allowance | Window **22:00–06:00**; a night counts with at least **4 h** inside it; night time rounded down to **30 min**; pays **25 % of the hourly rate per night hour** (a percentage, so it works in KES and TZS alike); nights on weekly offs / holidays included; no cap; everyone; payslip label "Night allowance" |
+
+**How each one then appears for the employee** (ESS → My Leave & Balances):
+- **Comp-off** — the *Compensatory Off* balance appears with the other balances (0 until a grant is approved), and the
+  tab *Comp-off, Overtime & Night Allowance* lists every grant. Flow: manager → Leave → Comp-off → *Grant comp-off* →
+  HR approves on Tasks → credited, expiring after 60 days → employee applies it like any leave.
+- **Night allowance** — same tab, *Night allowance*: qualifying nights and night time per rule for the chosen period;
+  a % rule shows "amount worked out by payroll". Payroll pays it on the payslip line "Night allowance".
+- **Overtime** — same tab, *Overtime*: every day with overtime — type and rate, time worked over, approved, **paid**,
+  and the status (*Paid* for overtime that needs no approval, *Waiting for approval*, *Approved*, *Not approved* with
+  who decided). Totals per type at the top. Default period = the current pay period; any range up to a year.
+
+## 33. Step 22 — completion notes (2026-10-04): consecutive unauthorised absence
+
+**Policy line:** §6 "Absence of [3] or more consecutive days without information is treated as unauthorized and may
+lead to disciplinary action." **Before:** nothing detected it.
+
+### Delivered (per company — Attendance Policies → *Unauthorised absence*)
+| Setting / behaviour | Effect |
+|---|---|
+| **Treat as unauthorised after N consecutive working days** (`unauthorisedAbsenceAlertDays`, empty = **off**, minimum 2) | Every run of N or more consecutive **scheduled working days** that are ABSENT **without information** becomes one *Unauthorised absence* item in the **Exceptions Queue** (HIGH), with the dates and the count; it grows with the run and is **resolved automatically** if the run stops qualifying |
+| What counts | Weekly offs, rest days and holidays between absent days neither break nor count. A day with a **pending leave request** or a **regularisation** (pending or approved) is "informed" and breaks the run; approved leave is ON_LEAVE, not ABSENT |
+| **Alert email** (event `UNAUTHORISED_ABSENCE`) | Template seeded per company, switched off. On / off, recipients (To / CC / BCC, line manager, employee), preview and send-now in the same section. **Once per run** (a run is known by its first day). Scheduled with the other checks when `Notifications:UnauthorisedAbsenceCheckEnabled` is true |
+| Exceptions Queue | New **type filter** and readable type names |
+
+| Area | Change |
+|---|---|
+| DB (`docs/db_changes.sql`, block "Policies Step 22") | `company_attendance_policies.unauthorisedAbsenceAlertDays`; `fn_UnauthorisedAbsenceRuns` (gaps-and-islands over working days); `sp_FlagUnauthorisedAbsence` (called as step 5 of `sp_ProcessDailyAttendance`, current + previous attendance period); `sp_GetUnauthorisedAbsenceAlerts`; email template per company. Applied on local; re-run safe |
+
+### Verification
+- `dotnet build` ✔, `dotnet test` **102/102** ✔, `tsc --noEmit` ✔.
+- Rolled-back checks on local, MAKL employee 20283, absent 18–25 Sep: **one run of 8**; a weekly off on the 22nd →
+  still **one run of 7**; present on the 22nd → **4 + 3**; a pending leave request on the 22nd → **4 + 3**.
+- Throwaway clone (dropped): 1 day refused; switched off → nothing flagged; **3 days** → employee 20283 flagged 18–25
+  Sep (8) and 28–30 Sep (3); a regularisation raised for 22 Sep → the first item **updated to 18–21 (4)** and a new one
+  23–25 (3); alert preview → each run to the HR address and his line manager.
+- Local: schema, procedures and switched-off templates only — no company switched on, nothing flagged.
+
+### Things to know
+- **Local data has many absences** (39,627 ABSENT days, mostly employees without punches): at 3 days MAKL alone has
+  **86 runs**. Clean up the attendance data (or start with a higher number) before switching it on, and preview the
+  email before enabling it.
+- **Not checked in a browser.**
+
+### Next: Step 23 — On Duty + Work From Home as real day types
+
+## 34. Step 23 — completion notes (2026-10-04): On Duty and Work From Home as real day types
+
+Staff Attendance Policy §3 / §5 (field duty, remote work, status codes OD / WFH).
+
+**Before:** "Out Duty" stamped the day PRESENT with a note and raised a regularisation that the inbox found by the words
+"Out Duty". It used fixed 09:00 / 17:00 / 480 minutes and covered one day. Daily processing could overwrite it from
+punches. Work from home did not exist.
+
+### Delivered
+| Who | What |
+|---|---|
+| **HR** — Attendance Policies → *On duty & work from home* | Allow on duty (default **on**), allow work from home (default **off**). Who approves: **Manager, then HR** (default) / **Manager only** / **HR only**. How many days back a request may start (empty = no limit; closed attendance periods are always refused) |
+| **Employee** — ESS → Attendance → *Apply On Duty / WFH* | One request for a **date range**. Hours = **each day's own shift**, or the times the employee gives. On duty also asks for the place, kind of duty and transport. Refused when: the type is switched off, it starts too far back, a closed period is involved, there is no scheduled working day in the range, it overlaps another request, or it overlaps leave (pending or approved) |
+| **Employee** — *My On Duty / WFH* | Every request with its stage, who decided and their remarks. A pending request, or an approved one that has not started, can be cancelled |
+| **Manager** — Approvals inbox / Task Hub (*Attendance & Shifts*) | Requests of their direct reports at the manager stage, with dates, hours, place and reason |
+| **HR** — same inbox | The HR stage. Needs the new DB permission **`attendance.dayrequest.hr`** ("HR approve on duty / work from home"), given to every role that has `attendance.manage`. An employee with **no reporting manager** goes straight to whoever holds that permission. Nobody decides their own request |
+| **Processing** | On each scheduled working day (not holidays or weekly offs) of an **approved** request, the request's hours count as attendance and **extend** any real punches. A full day gets status **ON_DUTY** / **WORK_FROM_HOME**, full credit, and is not late. A window shorter than the shift is judged like punches (late / half day / below the half-day minimum), with the request named in the note. Only **real punches** are stored, so a rejection or cancellation leaves no trace on the next run. Final approval reprocesses past days at once |
+| **Reports / views** | Registers (HR + team) show *On Duty* / *Work From Home*, and the status filters include them. The ESS calendar shows teal / indigo. Roster vs actual has its own two codes, not counted as exceptions. These count as present: dashboard KPI, monthly summary, ESS home, employee profile, reports |
+| **LOP (decision)** | **No new status.** ABSENT is a scheduled working day with no attendance and no leave, which payroll already treats as loss of pay. Every screen now labels it **"Absent (LOP)"**. On Duty / WFH days are never ABSENT, so they are paid |
+
+| Area | Change |
+|---|---|
+| DB (`docs/db_changes.sql`, block "Policies Step 23") | 4 policy columns; `attendance_day_requests`; `sp_ProcessDailyAttendance` (overlay + real punches only); permission `attendance.dayrequest.hr` + role grants; `sp_GetAttendanceDashboardSummary`, `sp_GetEmployeeMonthlyAttendance`, `sp_ReportRosterVsActual` count the new statuses; `fn_UnauthorisedAbsenceRuns` treats a pending or approved request as "informed" (Step 22). Applied twice on local |
+| API | `GET/POST api/me/day-requests`, `GET api/me/day-requests/settings`, `POST api/me/day-requests/{id}/cancel` (portal.me.view; the employee is taken from the login). The old `POST api/attendance/out-duty` now creates a one-day ON_DUTY request; empty times = shift |
+| Code | `DayRequestRules` (route, stages, decision, reprocessing), `DayRequestService`, inbox module `DAY_REQUEST` (pending list, decision, history, pending count). Frontend: `modules/portal/day-requests/*` (request drawer, my requests), `attendance/status.tsx` (shared status badge), `DayRequestPolicySection` |
+
+### Verification
+- `dotnet build` ✔, `dotnet test` **106/106** ✔ (4 new: stages per route, manager-only stage, HR permission,
+  no self-decision, no second decision), `tsc --noEmit` ✔.
+- Rolled-back checks on local (BLISS, 3 Oct):
+  - An absent employee with approved WFH (shift hours) → **WORK_FROM_HOME, 540 min**.
+  - 09:00–10:30 only → ABSENT, "below the half-day minimum".
+  - Rejected → back to **ABSENT**.
+  - A LATE employee (09:12–18:07) with On Duty → **ON_DUTY, not late, 607 min**, punches kept. A second run gives the same result.
+- Whole-company rerun of that day: the old and new procedures give **identical** counts.
+- Throwaway clone (dropped):
+  - Each refusal gives its message.
+  - Request → **manager's inbox only** (HR doesn't see the manager stage) → manager approves → day still ABSENT → **HR inbox** → HR approves → **WORK_FROM_HOME 540 min** at once.
+  - History shows the decision. A future request can be cancelled; a started one cannot.
+
+### Things to know
+- **Old Out Duty entries are not converted.** They stay as regularisations and PRESENT days with their old badge. Count
+  them on the VM before go-live:
+  `SELECT COUNT(*) FROM regularisations WHERE reason LIKE '%Out Duty%'`.
+- **No email** on submit or decision yet; requests appear in the inbox and the employee sees the status in *My On Duty / WFH*.
+- **Already in the data (not caused by this step):** some days stored earlier were processed under older settings. For
+  example, reprocessing BLISS 3 Oct moves about 60 days from LATE to HALF_DAY with **both** the old and the new
+  procedure. Reprocess a period on purpose, not by accident.
+- **Not checked in a browser.**
+
+### Step 24 — done, see §35
+
+## 35. Step 24 — completion notes (2026-10-04): regularisation deadline, two stages, over-quota escalation
+
+Staff Attendance Policy §7 ("within N working days", "approved by the reporting manager, then verified by HR",
+"beyond N per month, HR head approval"). Closes todo C6, B5, B6, B7.
+
+**Before:** no deadline. One decision by the manager **or** HR (found by role code / level). The monthly cap refused
+the request. A refusal message never reached the portal (it read `message`, the API puts it in `errors`).
+
+### Delivered
+| Who | What |
+|---|---|
+| **HR** — Attendance Policies → *Max miss-punch regularisations* (same card) | **Raise within N working days** after the date (empty = no limit). **Above the monthly limit:** *Refuse the request* (default, as before) or *Allow with approval from: &lt;role&gt;* (any active role, e.g. Group HR) |
+| **Employee** — ESS → Attendance → *Regularise* drawer | Shows **time left** (working days of their own schedule; weekly offs and holidays skipped) and **used this period** (a of b). When the request would be refused, the reason is shown and *Submit* is disabled. Above the limit with a role set, it says who will decide. After submitting, the message says where it went |
+| **Manager** — Approvals inbox / Task Hub | **Stage 1 of 2**: requests of their direct reports. Approving sends it to HR; rejecting ends it. The punches change only at the last stage |
+| **HR** — same inbox | **Stage 2 of 2 (PENDING_HR)**: needs the new DB permission **`attendance.regularisation.hr`** ("HR verify regularisation"). The summary shows which manager approved |
+| **Over-quota role** (e.g. Group HR) — same inbox | **PENDING_ESCALATION**, stage 2 of 2, instead of HR. The summary says "Above the monthly cap: request X with Y allowed this period". Only that role (or super admin / developer) decides it; the role is copied onto the request when it is raised |
+| **HR raising for an employee** | Starts at **stage 2** and is **not** held to the window. The monthly cap still applies (refused, or the over-quota role). An employee **with no reporting manager** also starts at stage 2 |
+| **Cut-off (B7, decision)** | A day in a **closed** attendance period stays refused (no "next cycle" queue). The window is now the documented deadline |
+| **Old requests** | Existing rows are **1 of 1** and are decided once by the manager or HR, as before |
+
+| Area | Change |
+|---|---|
+| DB (`docs/db_changes.sql`, block "Policies Step 24") | `company_attendance_policies.regularisationWindowDays`, `.regularisationOverQuotaApproverRole`; `regularisations.currentStageOrder`, `totalStages`, `raisedByUserId`, `overQuotaNote`, `approverRoleId`, `managerDecidedByName/At/Remarks`; permission `attendance.regularisation.hr` granted to every role with `attendance.manage`, **plus `COMPANY_HR` and `ADMIN`** (they decided regularisations before by role code). Applied on local; re-run safe |
+| API | `GET api/attendance/regularise/allowance?attendanceRecordId=` (attendance.mark); `GET api/attendance/settings/roles` (attendance.manage). `POST api/attendance/regularise` now returns where the request went. Decisions stay on `POST api/approvals/{id}/decide` → `ApprovalEngine` (`REGULARISATION`) |
+| Code | `RegularisationRules` (stages, who may decide, window count via `fn_EmployeeDaySchedule`, quota per period); `AttendanceService.SubmitRegularisationAsync` / `GetRegularisationAllowanceAsync`; inbox shows stage, tier and over-quota note. Frontend: `RegularisationPolicySection`, `RegularisationAllowanceNote` |
+
+### Verification
+- `dotnet build` ✔, `dotnet test` **112/112** ✔ (6 new: stage 1 → stage 2 applies punches only at the end, manager-only
+  stage 1 / no self-decision, HR permission, manager rejection, over-quota role only, old 1-of-1 requests), `tsc --noEmit` ✔.
+- Throwaway clone (dropped), Amina Gitau (comp-lch-01), window 2, today 4 Oct:
+  - 29 Sep → refused: "the limit is 2 working day(s) after the date and 4 have passed".
+  - 2 Oct → allowed (1 day left) → **manager's inbox only** (1/2) → HR refused at stage 1 → manager approves → manager
+    refused at stage 2 → HR approves → **PRESENT 08:00–17:00**.
+  - Cap 1, no role → refused "Regularisation limit reached: 1 allowed in this attendance period".
+  - Cap 1, role Group HR → accepted, "to the reporting manager, then Group HR (above the monthly cap)". HR raising
+    1 Oct → starts at stage 2 with the role. HR raising 30 Sep (outside the window) → accepted (exempt).
+  - Group HR's inbox shows PENDING_HR and PENDING_ESCALATION items. Group HR approves an escalation → **PRESENT**.
+
+### Things to know
+- **Who holds `attendance.regularisation.hr`:** roles with `attendance.manage` (HR Manager, Group HR, HR VP, Developer,
+  Super Admin) plus Company HR and Admin. **Finance roles lose** the ability they had by role level. Change it in Roles &
+  Permissions if needed.
+- On local, the `hr` demo user (Caroline) now belongs to **comp-makl-01**, so her inbox shows nothing for comp-lch-01.
+  Use an HR user of the employee's company.
+- **Already the case before (not changed):** the decide endpoint checks the permission, not the company. An HR user of
+  another company who knows a request's id could decide it. The same holds for on duty / work from home (Step 23).
+- **Quota counting is unchanged:** every regularisation in the attendance period counts, rejected ones included.
+- Still hard-coded in the inbox (flagged, not changed): 2-day SLA for regularisations, fallback texts "General Healthcare",
+  "Direct Supervisor", "Line Supervisor"; old Out Duty rows are still recognised by the words "Out Duty".
+- **No email** on submit or decision yet.
+- **Not checked in a browser.**
+
+### Step 25 — done, see §36
+
+## 36. Step 25 — completion notes (2026-10-04): manager monthly attendance confirmation
+
+Staff Attendance Policy §9 ("locked after manager confirmation") and §10 (manager confirms before cut-off; payroll only
+on confirmed attendance). Closes todo C9, B9, B13.
+
+**Before:** no confirmation step; approving payroll locked the period whatever its state.
+
+### Delivered
+| Who | What |
+|---|---|
+| **HR** — Attendance Policies → General settings (next to *Close Month*) | **Managers must confirm their team's attendance before payroll is approved** (default **off** — nothing changes until switched on) |
+| **Manager** — Attendance → **Confirm Team Attendance** (`/attendance/team-confirmation`) | Pick any date of the period. Each active direct report with present, late, absent (LOP), half days, leave, OD / WFH and pending requests; rows with exceptions are highlighted. **Confirm my team's attendance** (asks once more, showing the open exceptions). Shows who confirmed and when; confirming twice is refused |
+| **HR** — same page | **All teams** of the period: team size, exceptions, confirmed by / at, *no login* marker. **Open** any team and confirm it **on the manager's behalf** (recorded under HR's name), confirm the **No reporting manager** team, or **Withdraw** a confirmation (e.g. after a late correction) |
+| **Payroll** — Payroll → approve cycle | With the setting on, approval is **refused** while a team of that attendance period is unconfirmed; the message names the first five teams and how many more. **Draft runs are not affected** |
+
+| Area | Change |
+|---|---|
+| DB (`docs/db_changes.sql`, block "Policies Step 25") | `company_attendance_policies.requireManagerConfirmationBeforeLock`; `attendance_period_confirmations` (unique per company, period start, manager; manager NULL = no-manager team); `sp_GetTeamConfirmationStatus`, `sp_GetTeamAttendanceSummary`; permission **`attendance.confirm.team`** (line manager roles `role_mgr`, `ems` and every role with `attendance.manage`); menu *Confirm Team Attendance* under Attendance. Applied twice on local |
+| API | `GET api/attendance/team-confirmation?periodDate=&managerEmployeeId=&noManager=`, `POST …/confirm`, `DELETE …/{id}` (HR only) — all `attendance.confirm.team`; HR = `attendance.manage`. `POST api/payroll/cycles/{month}/approve` now returns **400 with the reason** instead of a 500 |
+| Code | `TeamConfirmationService`, `TeamConfirmationRules` (status, payroll check, message); `PayrollService.ApproveCycleAsync` calls the check. Frontend: `modules/attendance/team-confirmation/*`, setting in `AttendanceSettingsTab`; the three payroll approve screens now show `errors[0]` |
+
+### Verification
+- `dotnet build` ✔, `dotnet test` **115/115** ✔ (3 new: all confirmed, unconfirmed named incl. the no-manager team,
+  more than five), `tsc --noEmit` ✔.
+- Throwaway clone (dropped), comp-makl-01, September, setting on:
+  - Approve → refused, "not confirmed by 6 team(s): … and 1 more".
+  - Ranmeet (manager) sees his 19 reports → confirms → a second confirmation is refused. Asking for another
+    manager's team still gives his own. He cannot withdraw (HR only).
+  - Approve → refused naming the 5 left. HR confirms them, including the no-manager team. HR withdraws one →
+    refused naming only that one. HR confirms it again → **approved (LOCKED)**.
+  - comp-agi-01 (setting off) → approved as before.
+
+### Things to know
+- **Most managers have no login**: in comp-makl-01, 5 of 6 managers cannot sign in. With the setting on, HR will confirm
+  most teams on their behalf until those managers get accounts. The HR list marks them *no login*.
+- A team = **active** direct reports **in the company** (by `reportingManagerId`). A manager in another company still
+  confirms their reports here, by switching to that company.
+- Confirming does not lock or freeze anything. Later corrections still go through. HR can withdraw and ask again.
+  Nothing flags "changed after confirmation".
+- Exceptions counted: absent (LOP) and half days, pending regularisations, pending on duty / work from home requests.
+  Late days are shown but not counted as exceptions.
+- In **PERIOD_END** close-month mode the period still closes by date. The setting only holds back **payroll approval**.
+- **No reminder email** to managers yet.
+- Flagged, not changed: `RunPayrollAsync` maps country names to codes in code ("INDIA" → IN, … default KE).
+- **Not checked in a browser.**
+
+### Next: Step 26 — Roster publication lead time
