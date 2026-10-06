@@ -3,12 +3,14 @@
 Pages in scope: `/user`, `/rolemanagemnt`, `/menumanagement`, `/permissionmanagemnt`
 Analysis date: 2026-10-07 (live DB `HRMSCore_Local`, read-only queries)
 
+### Follow the instructions of 'docs/follow.md' file
+
 ## Progress
 
 | Step | Title | Status |
 |---|---|---|
 | 0 | Backup (DB + RBAC table snapshots) | Done 2026-10-07 |
-| 1 | Menu data cleanup | Not started |
+| 1 | Menu data cleanup | Done 2026-10-07 |
 | 2 | Permission data cleanup | Not started |
 | 3 | Link menus ↔ permissions (FKs) | Not started |
 | 4 | Backend: policies, dynamic Task menu, God-mode flag | Not started |
@@ -116,7 +118,7 @@ Add `permissions.menuId` and `menus.permissionId` (FK, nullable for Parent rows)
 - Nav: parent visible only when a child is.
 
 ### Step 5 — Frontend guard & cleanup (F1, F9, F20, S1)
-Route guard in the dashboard layout using the nav response (403 view). `permissions.ts` uses `isGodMode` from the session. Delete duplicate routes and old views (`RolesView`, `RoleWizardView` if unused, `/admin/users*`, `/admin/roles*`, `*managemnt`, `/authorizedsignatories`, `/letter`, `/approvals`).
+Route guard in the dashboard layout using the nav response (403 view). `permissions.ts` uses `isGodMode` from the session. Delete duplicate routes and old views (`RolesView`, `RoleWizardView` if unused, `/admin/users*`, `/admin/roles*`, `*managemnt`, `/authorizedsignatories`, `/letter`, `/approvals`, `/me`). Guard must allow sub-routes of a granted menu route (tabs: `/shifts/lookup|master|schedules|roster`, `/companysetup/routing`). Remove the hardcoded `NAV_SECTIONS` fallback and the `OVERVIEW` special case in `Sidebar.tsx` (static values, found in Step 1).
 
 ### Step 6 — UI (F2, F4, D3)
 Roles: grant on a menu tree with action checkboxes. Menus & Permissions: permission select (no free text), permissions tab inside each menu drawer; remove the Permission Management page and menu. Users / Roles / Menus under one "Access Control" parent.
@@ -131,14 +133,16 @@ Log in as developer, superadmin, HR, line manager, employee: sidebar = granted m
 
 ## 6. Per-step prompts (start each in a fresh session)
 
-- **Step 0:** "Read docs/follow.md and docs/rbac_fixes.md. Do Step 0 (backup) exactly as written, verify it, record the restore script and counts in §7, update Progress."
-- **Step 1:** "Read docs/follow.md and docs/rbac_fixes.md. Confirm Step 0 is done. Do Step 1 (menu cleanup): show me the delete/merge/move list with role impact first, then write the script in db_changes.sql, apply, record in §7."
-- **Step 2:** "Read docs/follow.md and docs/rbac_fixes.md. Do Step 2 (permission cleanup): per F5/F6 code, show wire-or-delete with role impact, then implement, dotnet build, record in §7."
-- **Step 3:** "Read docs/follow.md and docs/rbac_fixes.md. Do Step 3 (menu ↔ permission FKs + backfill), update EF entities/configs, dotnet build, record in §7."
-- **Step 4:** "Read docs/follow.md and docs/rbac_fixes.md. Do Step 4 (backend policies, dynamic Task menu per §3 rule 5, roles.isGodMode). Confirm approverSequenceJson shape first. dotnet build, record in §7."
-- **Step 5:** "Read docs/follow.md and docs/rbac_fixes.md. Do Step 5 (route guard, isGodMode in permissions.ts, delete duplicate routes/views). tsc --noEmit, record in §7."
-- **Step 6:** "Read docs/follow.md and docs/rbac_fixes.md. Do Step 6 (Roles menu-tree grants, permissions inside Menu drawer, remove Permission page, Access Control group). tsc + dotnet build, record in §7."
-- **Step 7:** "Read docs/follow.md and docs/rbac_fixes.md. Do Step 7 re-test on a DB clone across all roles, then drop retired columns and bak_rbac_* tables after my go-ahead."
+### NOTE: EVERYTHING MUST BE DYNAMIC.
+
+- **Step 0:** "Read docs/rbac_fixes.md. Do Step 0 (backup) exactly as written, verify it, record the restore script and counts in §7, update Progress."
+- **Step 1:** "Read docs/rbac_fixes.md. Confirm Step 0 is done. Do Step 1 (menu cleanup): show me the delete/merge/move list with role impact first, then write the script in db_changes.sql, apply, record in §7."
+- **Step 2:** "Read docs/rbac_fixes.md. Do Step 2 (permission cleanup): per F5/F6 code, show wire-or-delete with role impact, then implement, dotnet build, record in §7."
+- **Step 3:** "Read docs/rbac_fixes.md. Do Step 3 (menu ↔ permission FKs + backfill), update EF entities/configs, dotnet build, record in §7."
+- **Step 4:** "Read docs/rbac_fixes.md. Do Step 4 (backend policies, dynamic Task menu per §3 rule 5, roles.isGodMode). Confirm approverSequenceJson shape first. dotnet build, record in §7."
+- **Step 5:** "Read docs/rbac_fixes.md. Do Step 5 (route guard, isGodMode in permissions.ts, delete duplicate routes/views). tsc --noEmit, record in §7."
+- **Step 6:** "Read docs/rbac_fixes.md. Do Step 6 (Roles menu-tree grants, permissions inside Menu drawer, remove Permission page, Access Control group). tsc + dotnet build, record in §7." 
+- **Step 7:** "Read docs/rbac_fixes.md. Do Step 7 re-test on a DB clone across all roles, then drop retired columns and bak_rbac_* tables after my go-ahead."
 
 ## 7. Completion notes
 _(one subsection per step: date, what changed, scripts, counts, how to restore)_
@@ -208,3 +212,25 @@ COMMIT;
 | roles | 15 | 15 |
 
 Note: permissions is 156, not 157 as written in §1. Use 156 as the baseline for Steps 1–7.
+
+### Step 1 — Menu data cleanup (2026-10-07)
+
+Script: `docs/db_changes.sql` → "RBAC Step 1" block (one transaction, idempotent; re-run changed 0 rows). Restore: Step 0 Option B.
+
+**Deleted (19)** — no role lost access to a working page:
+- Duplicates (F13/F12): `LEAVE_MANAGEMENT`, `APPROVALS`, `APPROVALS_MATRIX` (hidden), `ONBOARD_REPORTS` (all `reports.view` roles also hold `reporting.view`, used by `REP_WORKFORCE`), `LEAVE_HOLIDAYS` (its `leave.types.manage` roles all hold `leave.manage`, used by the kept `MST_LEAVE_HOLIDAYS`).
+- Empty/inactive parents (F14): `REQUISITIONS`, `ONBOARDING`, `DOCS_COMPLIANCE`, `PERFORMANCE`, `TRAINING`.
+- Under construction (F15): `PERF_REV`, `PERF_GOALS`, `TRAIN_PROG`, `EMP_ADD`, `EMP_DETAILS`, `EMP_BULK` (add/bulk live in `/employeedirectory`, details at `/employees/[id]`), `LEAVE_APPLY` (staff use `/portal/leave`).
+- Inactive (F16): `MST_SRF_MATRICES`, `ONBOARD_CONFIG`.
+
+**Moved (F17)** to System Configuration: `SYS_USER` (from Administration), `SYS_AUDIT`, `SYS_SETTINGS` (from Developer Studio). Order: Users 1, Roles 2, Menus 3, Permissions 4, Audit 5, Settings 6. No visibility change — `users.manage`, `audit.view`, `settings.manage` are held by the same roles (Admin, Developer, Super Admin).
+
+**Fixed:** `SYS_ROLE` → `/rolemanagement`, `SYS_PERM` → `/permissionmanagement` (F1); "Attendance Policies" (F18); Masters sort order (Approval Matrices 11, Deadlines 12, Country 13).
+
+**Added (F19):** `ATT_ROSTER` "Staff Roster" under Attendance, `/shifts/roster`, `shifts.roster.view` (8 roles), icon `CalendarRange`.
+
+**F19 "to check" — decided:** `/shifts/lookup|master|schedules` are tabs of `/shifts`; `/companysetup/routing` is a tab of `/companysetup` → no menu (Step 5 guard allows sub-routes). `/me` is superseded by `/portal/me` → added to the Step 5 delete list.
+
+**Counts:** menus 107 → **89** (89 active, 89 visible). 0 orphans, 0 empty parents, 0 duplicate routes. `permissions` / `role_permissions` / `roles` unchanged (156 / 860 / 15).
+
+**Carried forward:** Step 5 — `Sidebar.tsx` hardcoded `NAV_SECTIONS` fallback (incl. `/admin/backup`, which has no menu) and `OVERVIEW` special case. Step 3 — `permissionModule` values still mismatched (e.g. `ATT_OVERTIME` "Overtime", `ATT_ROSTER` "Shift Management").
