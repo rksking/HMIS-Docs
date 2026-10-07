@@ -15,7 +15,7 @@ Analysis date: 2026-10-07 (live DB `HRMSCore_Local`, read-only queries)
 | 3 | Link menus ↔ permissions (FKs) | Done 2026-10-07 |
 | 4 | Backend: policies, dynamic Task menu, God-mode flag | Done 2026-10-07 |
 | 5 | Frontend: route guard, delete duplicate routes/views | Done 2026-10-07 |
-| 6 | UI: role grants by menu tree, merge Permission page into Menus | Not started |
+| 6 | UI: role grants by menu tree, merge Permission page into Menus | Done 2026-10-07 |
 | 7 | Full re-test (follow.md #12) | Not started |
 
 ## 0. Decisions (answered 2026-10-07)
@@ -385,3 +385,45 @@ No DB change. `tsc --noEmit` clean.
 **Browser checks (for Step 7):** employee → `/rolemanagement` shows 403, `/portal/me` opens; HR → `/rolemanagement/create` opens only if the role holds the Roles menu; superadmin → `/menumanagement` 403 (no `menus.manage`); developer → every URL opens; `/leave-holidays` is not opened by a `/leave` grant; sidebar highlights `Recruitment › Offers` on `/recruitment/offers/<id>`. **Log in again first** — old sessions have no `isGodMode`, so the developer would see 403 until re-login.
 
 **> Code correction and static values (not changed, same decision as backend `IsSuperAdmin` / `roles.allCompanies`):** role id/name checks remain in `CompanySwitcher.tsx:41`, `RaiseSrfDrawer.tsx:124`, `RequisitionDashboardView.tsx:49`, `RequisitionsSrfView.tsx:44`, `RecruitmentView.tsx:52`; `AuthContext.login` maps `HR-ADMIN`/`africare` → `superadmin` (demo alias). `AdminView` + `UserManagementTab` are not routed anywhere (dead code).
+
+
+### Step 6 — Role Permissions screen, permissions inside the Menu drawer, Access Control (2026-10-07)
+
+Script: `docs/db_changes.sql` → "RBAC Step 6" block (schema + one transaction, idempotent; re-run changed 0 rows). Restore: Step 0 Option B (new table/column can stay; `DELETE FROM permission_action_types`, and re-add `SYS_PERM` + `permissions.view/.manage` from `bak_rbac_*`). `dotnet build` 0 errors, `tsc --noEmit` clean, tests **304/304**.
+
+**Schema/data:**
+- `permission_action_types` (code, name, sortOrder, isActive) — 12 rows: View, Create, Edit, Delete, Export, Import, Approve, Reject, Print, Manage, Execute, Notify. `permissions.actionType` normalised to it (`MANAGE`/`ADMIN` → Manage, `Update`/`UPDATE` → Edit). Reject and Print have no codes yet — they are lookup values only (§3 rule 2).
+- `permissions.isSelfService` (bit) — set on `portal.me.view`, `portal.dashboard.view`, `portal.attendance.view`, `portal.leave.view`. Replaces the hardcoded `AdminService.SelfServicePermissionCodes`.
+- New parent `ACCESS_CONTROL` "Access Control" (icon KeyRound, sort 19): User Management 1, Role Management 2, **Menus & Permissions** 3 (`SYS_MENU` renamed). System Configuration (sort 20) keeps Audit Logs 1, System Settings 2. Developer Studio → 21.
+- `SYS_PERM` menu deleted; `permissions.view` / `permissions.manage` deleted with 6 grants (the 3 holders all hold `roles.view`).
+
+**Backend:**
+- `AdminController` permission APIs: GETs (list, by id, grouped) → `roles.view` (Roles screen reads them); create/update/delete/toggle → `menus.manage` (developer only). New `GET /api/admin/permission-action-types` (`roles.view`).
+- `UpdateRolePermissionsAsync`: no more swallowed exceptions / "demo mode" `true`. Unknown role → 404; god-mode role → 400 ("cannot be edited"). Self-service codes read from `isSelfService`. `PermissionDto.isSelfService` added.
+- Entities: `Permission.IsSelfService`, new `PermissionActionType`.
+
+**Frontend:**
+- New `/rolemanagement/[roleId]/permissions` → `RolePermissionsView` (design png). Role select (switches route), description, Total Menus (routed menus / granted), Total Permissions (all codes / granted). Left tree from `GET /api/menus`: checkbox = grant (parent tri-state over children), toggle = global `isActive`, 6-dot drag reorders and saves at once via `PUT /api/menus/reorder` (parents among parents; a child onto a child = insert before, onto a parent = append). Drag + toggles only with `menus.manage`, read-only otherwise. Right: Menu Permissions table (rows = the menu's real codes, sorted by the action-type master; "screen" tag on the view code) with checkbox + toggle = same grant; header checkbox = all on this menu. Granting an action adds the view code; removing the view code removes the menu's actions. Self-service rows are locked on with a "Self-service · every role" tag. Child Menus (n) tab. God-mode role: everything on, read-only, no Save. Save = `PUT /api/admin/roles/{id}/permissions`.
+- `RoleManagementView`: "Permissions" actions open the new page; `RolePermissionsDrawer` deleted.
+- Edit Menu drawer: tabs **Details** / **Permissions (n)**. Free-text module + permission code replaced by a **Screen Permission** select of the menu's own codes. Permissions tab (`MenuPermissionsPanel`) adds/edits/deletes codes with `menuId` and an Action select from the master. Create Menu drawer: no permission field (add codes in Edit after creating).
+- `permissionModule` removed from menu create/update/nav types. Deleted: `/permissionmanagement`, `PermissionManagementView`, `CreatePermissionDrawer`, `EditPermissionDrawer`. `UnderConstructionView` card → `/rolemanagement`.
+
+**API check (live DB, GETs + rejected writes only):**
+
+| Login | action types / permissions / menus GET | permission DELETE | PUT god-mode role grants |
+|---|---|---|---|
+| developer | 200 / 200 / 200 | 404 (reached) | 400 |
+| superadmin | 200 / 200 / 200 | 403 | 400 |
+| hr | 403 / 403 / 403 | 403 | 403 |
+
+Superadmin sidebar: Access Control = User Management, Role Management (no Menus & Permissions); System Configuration = Audit Logs, System Settings.
+
+**Counts:** menus 89 (+ACCESS_CONTROL, −SYS_PERM), permissions 115 → **113**, role_permissions 668 → **662**, permission_action_types **12**, self-service codes **4**.
+
+**Browser checks (for Step 7):** superadmin → Role Management → a role's Permissions → page opens, toggles/drag disabled, tick a child menu + an action, Save, reload = kept; untick the screen row → its actions clear. Developer → same page, drag a child to another parent → sidebar order changes; toggle a parent inactive → its children disappear from the sidebar. Open the Developer role → read-only. Developer → Menus & Permissions → Edit a menu → Permissions tab → add `x.test` (Action select), pick it as Screen Permission, then delete it (blocked while it is the screen permission). Superadmin → `/menumanagement` → 403.
+
+**> Code correction and static values (not changed):**
+- `RoleManagementView` still has a `PermissionMatrixTab` (grouped by derived `module`) and `RoleWizardView` groups permissions by `module`. They work, but grouping should move to the menu tree in a later clean-up; then the derived `PermissionDto.module` / `MenuDto.permissionModule` can be dropped (Step 7 drops the columns).
+- `MenuManagementView` module filter/badges use the derived `permissionModule` (= group name).
+- `/admin/backup` still has no menu (god mode only) — decide in Step 7.
+
