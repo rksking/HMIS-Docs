@@ -14,7 +14,7 @@ Analysis date: 2026-10-07 (live DB `HRMSCore_Local`, read-only queries)
 | 2 | Permission data cleanup | Done 2026-10-07 |
 | 3 | Link menus ↔ permissions (FKs) | Done 2026-10-07 |
 | 4 | Backend: policies, dynamic Task menu, God-mode flag | Done 2026-10-07 |
-| 5 | Frontend: route guard, delete duplicate routes/views | Not started |
+| 5 | Frontend: route guard, delete duplicate routes/views | Done 2026-10-07 |
 | 6 | UI: role grants by menu tree, merge Permission page into Menus | Not started |
 | 7 | Full re-test (follow.md #12) | Not started |
 
@@ -365,3 +365,23 @@ Rule 5 proof: with `task.view`/`approvals.*` revoked from `role_mgr`, the manage
 
 **Carried forward:** Payslips self-only endpoint (Step 2 note). Step 6 Role Permissions screen spec added under Step 6 in §4.
 
+
+### Step 5 — Frontend route guard & cleanup (2026-10-07)
+
+No DB change. `tsc --noEmit` clean.
+
+**Guard:** `NavProvider` (`modules/menu/NavContext.tsx`) loads `/api/menus/nav` once per user/company and is shared by the sidebar and `RouteGuard` (`components/layout/RouteGuard.tsx`, inside `page-content` of the dashboard layout). A page is allowed when its path equals a nav route or starts with `route + "/"` (segment boundary, so `/leave` does not open `/leave-holidays`). Routes are collected from the whole nav tree at any depth, so a child under any parent counts. God mode (`user.isGodMode`) skips the check. Otherwise → `ForbiddenView` (403, "Go to my home page" = first granted route). Server-side redirect pages (`/portal`, `/companies`, `/masters/srf-matrices`, `/admin?tab=`) still redirect before the guard.
+
+**Session / helpers:** `UserSession.isGodMode` is filled from login and `/me` refresh. `lib/permissions.ts` = `isGodMode`, `hasPermission`, `hasAnyPermission` (no role ids/names; `isDeveloper`/`isSuperAdmin` removed). `AuthContext.hasPermission` and `PermissionGate` use it. User decision: the old `isSuperAdmin` callers now use permissions — returned SRF edit/resubmit → `requisitions.manage`; ATS stage move → `recruitment.manage` (widens to the roles holding them: company_hr, group_hr, hr_vp, role_hr, role_mgr, superadmin). ATS board set-up stays god-mode only.
+
+**Sidebar:** built only from the nav response (`buildSections`): parent with children = section, routed parent without children = single link. Removed the `NAV_SECTIONS` fallback (~490 lines), the `OVERVIEW`/Dashboard special case, the `/task` + `hasDirectReports` visibility filter, the `*managemnt`/`/admin/users` aliases in `isItemActive` and the "Rakesh Kumar"/"Super Admin"/"RK" fallbacks. Active item = deepest menu route containing the current path. Task badge fetches metrics only when the nav has `/task`.
+
+**Moved:** `/admin/roles/create` → `/rolemanagement/create`, `/admin/users/create` → `/user/create` (allowed as sub-routes); links repointed in `RoleManagementView`, `UsersView`, `UserManagementTab`, `RoleWizardView`, `CreateUserWizardView`, `AuditLogView`, `admin/page.tsx`; `UnderConstructionView` → `/permissionmanagement`.
+
+**Deleted routes:** `/menumanagemnt`, `/rolemanagemnt`, `/permissionmanagemnt`, `/admin/users`, `/admin/roles`, `/authorizedsignatories`, `/authorized-signatories` (= `/letters/signatories`), `/letter`, `/approvals`, `/me`, `/admin/leave-holidays` (= `/leave-holidays`), `/admin/statutory-rates` (= `/statutory-rates`). **Deleted views:** `RolesView`, `LettersView` + `LetterDetailView` + `LettersView.module.css`. `RoleWizardView`, `CreateUserWizardView`, `MeView` kept (in use).
+
+**Pages left without a menu (god mode only now):** `/admin/backup`. Decide in Step 6 whether it gets a menu.
+
+**Browser checks (for Step 7):** employee → `/rolemanagement` shows 403, `/portal/me` opens; HR → `/rolemanagement/create` opens only if the role holds the Roles menu; superadmin → `/menumanagement` 403 (no `menus.manage`); developer → every URL opens; `/leave-holidays` is not opened by a `/leave` grant; sidebar highlights `Recruitment › Offers` on `/recruitment/offers/<id>`. **Log in again first** — old sessions have no `isGodMode`, so the developer would see 403 until re-login.
+
+**> Code correction and static values (not changed, same decision as backend `IsSuperAdmin` / `roles.allCompanies`):** role id/name checks remain in `CompanySwitcher.tsx:41`, `RaiseSrfDrawer.tsx:124`, `RequisitionDashboardView.tsx:49`, `RequisitionsSrfView.tsx:44`, `RecruitmentView.tsx:52`; `AuthContext.login` maps `HR-ADMIN`/`africare` → `superadmin` (demo alias). `AdminView` + `UserManagementTab` are not routed anywhere (dead code).
