@@ -13,7 +13,7 @@ Analysis date: 2026-10-07 (live DB `HRMSCore_Local`, read-only queries)
 | 1 | Menu data cleanup | Done 2026-10-07 |
 | 2 | Permission data cleanup | Done 2026-10-07 |
 | 3 | Link menus ↔ permissions (FKs) | Done 2026-10-07 |
-| 4 | Backend: policies, dynamic Task menu, God-mode flag | Not started |
+| 4 | Backend: policies, dynamic Task menu, God-mode flag | Done 2026-10-07 |
 | 5 | Frontend: route guard, delete duplicate routes/views | Not started |
 | 6 | UI: role grants by menu tree, merge Permission page into Menus | Not started |
 | 7 | Full re-test (follow.md #12) | Not started |
@@ -123,6 +123,24 @@ Route guard in the dashboard layout using the nav response (403 view). `permissi
 ### Step 6 — UI (F2, F4, D3)
 Roles: grant on a menu tree with action checkboxes. Menus & Permissions: permission select (no free text), permissions tab inside each menu drawer; remove the Permission Management page and menu. Users / Roles / Menus under one "Access Control" parent.
 
+**Role Permissions screen — user design (follow strictly):** [docs/design/rbac_role_permissions.png](design/rbac_role_permissions.png). User brief (2026-10-07):
+- Application Menu is a tree: Parent Menu → Child Menus. Drag & drop reordering with the 6-dot handle; persist the new order.
+- Each menu / child menu has an Active/Inactive toggle. Parent activation controls child-menu availability.
+- Selecting a menu loads its permissions on the right. Actions: View, Create, Edit, Delete, Export, Import, Approve, Reject, Print. Enable/disable each permission with checkbox + toggle.
+- Show the selected Role and a permission summary. Save to the DB; no static/mock data; load menus and permissions for the selected role.
+- Follow `/recruitment` and `/requisitions` styling. No breadcrumbs, no stepper, no modal; existing page layout (follow.md #6).
+
+**Alignment with the data model (decided in Step 4, apply in Step 6):**
+- Route: `/rolemanagement/[roleId]/permissions` ("Back to Roles" → `/rolemanagement`). The Step 5 guard allows it as a sub-route.
+- Left tree = `GET /api/menus` (needs `roles.view`), built from `parentId` only. Any child can sit under any top-level parent; the API rejects a 3rd level.
+- **Checkbox on a menu = grant to the selected role** (its `menus.permissionId` view code). A parent checkbox is tri-state over its children.
+- **Toggle on a menu = the menu's global `isActive`** (and "Enable Menu" on the right). The 6-dot drag and the toggles change the menu for everyone, so they are shown/enabled only with `menus.manage` (god mode); others see them read-only. An inactive parent hides its children in the sidebar (already true in `MenuService`).
+- Right table = the menu's real permissions (`permissions.menuId`), "Permission" column = `actionType`. **Do not create nine codes per menu** — §3 rule 2: every code must be checked by an endpoint. Rows show only the actions that exist; an action-type master (View/Create/Edit/Delete/Export/Import/Approve/Reject/Print/Manage) is a lookup table for the Menus & Permissions drawer, not hardcoded.
+- Row checkbox and toggle are the same grant state (header checkbox = grant all on this menu). Granting an action also grants the menu's view code; removing the view code removes the menu's actions.
+- "Child Menus (n)" tab lists the selected parent's children with the same checkbox/toggle.
+- Summary cards: Total Menus = routed menus, "x Active" = menus granted to the role; Total Permissions = all codes, "x Active" = codes granted. God-mode role: everything on, read-only.
+- Save = existing `PUT /api/admin/roles/{id}/permissions` (`roles.edit`). Note `AdminService.SelfServicePermissionCodes` (portal.* auto-added to every role) is a hardcoded list — replace with data or show it explicitly.
+
 ### Step 7 — Full re-test (follow.md #12)
 Log in as developer, superadmin, HR, line manager, employee: sidebar = granted menus only; typed URL of a non-granted page → 403; API returns 403 for the same; Task menu appears for a matrix approver with no `task.view`, and disappears when removed from the matrix. Then drop the retired columns and `bak_rbac_*` tables.
 
@@ -140,7 +158,7 @@ Log in as developer, superadmin, HR, line manager, employee: sidebar = granted m
 - **Step 2:** "Read docs/rbac_fixes.md. Do Step 2 (permission cleanup): per F5/F6 code, show wire-or-delete with role impact, then implement, dotnet build, record in §7."
 - **Step 3:** "Read docs/rbac_fixes.md. Do Step 3 (menu ↔ permission FKs + backfill), update EF entities/configs, dotnet build, record in §7."
 - **Step 4:** "Read docs/rbac_fixes.md. Do Step 4 (backend policies, dynamic Task menu per §3 rule 5, roles.isGodMode). Confirm approverSequenceJson shape first. dotnet build, record in §7."
-- **Step 5:** "Read docs/rbac_fixes.md. Do Step 5 (route guard, isGodMode in permissions.ts, delete duplicate routes/views). tsc --noEmit, record in §7."
+- **Step 5:** "Read docs/rbac_fixes.md and docs/follow.md. Confirm Steps 0–4 are Done. Do Step 5: route guard in the dashboard layout from `/api/menus/nav` — a route is allowed when it equals or starts with a granted menu route (sub-routes/tabs), else a 403 view; god mode (`user.isGodMode` from the session) is allowed everywhere. `permissions.ts` uses `isGodMode`, no hardcoded role ids/names. Delete the duplicate routes/views listed in Step 5 and the `NAV_SECTIONS` fallback + `OVERVIEW` special case in `Sidebar.tsx`. Child menus can sit under any parent: build sidebar and guard from the nav response only, never assume a menu's parent. Show me the delete list with any links pointing to those routes first, then implement, tsc --noEmit, record in §7, update Progress."
 - **Step 6:** "Read docs/rbac_fixes.md. Do Step 6 (Roles menu-tree grants, permissions inside Menu drawer, remove Permission page, Access Control group). tsc + dotnet build, record in §7." 
 - **Step 7:** "Read docs/rbac_fixes.md. Do Step 7 re-test on a DB clone across all roles, then drop retired columns and bak_rbac_* tables after my go-ahead."
 
@@ -300,4 +318,50 @@ Script: `docs/db_changes.sql` → "RBAC Step 3" block (schema + one transaction,
 - `AdminService.GetAllPermissionsAsync` falls back to the in-code `SeedPermissions` list when the query fails (a fake fallback, follow.md #1). The `DefaultRolePermissions` dictionary is also hardcoded.
 
 **Carried forward:** Step 6 replaces the free-text module and permission-code inputs with menu and permission selects, and then removes the derived `module` / `permissionModule` fields. Payslips self-only endpoint, handler aliases and `MenusController` policies stay as listed in Step 2 (user confirmed 2026-10-07).
+
+### Step 4 — Backend policies, dynamic Task menu, God mode (2026-10-07)
+
+Script: `docs/db_changes.sql` → "RBAC Step 4" block (schema + one transaction, idempotent; re-run changed 0 rows). Restore: Step 0 Option B (new columns keep their values; `permission_implications` can be emptied with `DELETE FROM permission_implications`). `dotnet build` 0 errors, `tsc --noEmit` clean, tests **304/304**.
+
+**`approverSequenceJson` shape (confirmed):** array of steps `{step, role, title, actionType, slaDays, designatedUserId, designatedUserName[, specificUserId]}`. Key casing is mixed (`role` / `Role`), so it is read in C# case-insensitively. `role` is a routing code (`LINE_MANAGER`, `HRBP`, `DEPT_HEAD`, `FINANCE_BUDGET`, `HR_REVIEW`, `GROUP_HR`, `COMPANY_HR`, `MANAGING_DIRECTOR`, `CEO`); `designatedUserId` holds an **employee** id.
+
+**Schema/data:**
+- `roles.isGodMode` (bit, default 0) — set on `role_dev`.
+- `permissions.grantedToApprovers` (bit) — set on `task.view`, `approvals.view`, `approvals.manage`.
+- `permission_implications (permissionId → impliesPermissionId)` — 18 rows, the former handler shortcuts: `portal.attendance.view` → `attendance.view/.mark`; `portal.leave.view` → `leave.view/.apply`; `portal.dashboard.view` → `employees.view`; `reporting.view` → `dashboard.view`; `companies.view` → `dashboard.group.view`; `employees.view` → `dashboard.employees.view`; `requisitions.create/.view`, `recruitment.view`, `approvals.view`, `task.view` → `orgmasters.view`, `companies.view`.
+- New `menus.manage` (menu `SYS_MENU`, granted to no role → developer only, D3). `SYS_MENU` now opens with it.
+- `dev.*` revoked from Admin and Super Admin (10 grants; they got 403 on every dev call).
+
+**Code:**
+- New `IUserAccessResolver` / `UserAccessResolver`: role grants + `grantedToApprovers` codes when the user is an approver + implications. Approver = an open item for them (`requisition_approvals`, `offer_approvals`, `leave_requests` current approver, `regularisations.approverRoleId`) **or** an active matrix step in their company (group roles: any group company) that names them, matches their role (`ApprovalVisibilityRules.RoleMayTakeStep`, same rule as `/task`), or routes to `LINE_MANAGER`/`REPORTING_MANAGER` while they have active direct reports.
+- `MenuService` nav uses the resolver: no role-id God-mode check, no `TASK`/`/task` special case, no direct-reports guess. Signature is now `GetAuthorizedNavigationAsync(userId)`. Parent shown when a child is visible, or when it has its own route and permission.
+- Login (`AuthService`): session gets `isGodMode` and the resolved permissions (`*`/`ALL` still added for god mode). Token gets `god_mode` and `api_permission` claims (implications; JSON-ignored, never in the session).
+- `PermissionAuthorizationHandler`: god_mode claim, or exact `permission` / `api_permission` claim. All hardcoded aliases, the `dev.` prefix gate and the SNAKE_CASE normalisation are removed. `CurrentUserService.IsDeveloper` reads `god_mode`; `ApprovalsService.IsSuperOrDeveloper` no longer lists developer ids.
+- `MenusController`: GET list/by id → `roles.view` (read-only tree, used by the Roles screen); create/update/delete/reorder/toggles → `menus.manage`. Sidebar stays `[Authorize]`.
+- Menu tree: any child may move under any top-level parent; create/update/reorder reject a 3rd level (400).
+- `AdminService`: removed the auto-grant of new permissions to hardcoded `superadmin`/`role_super`/`admin`, the in-code `SeedPermissions` / `DefaultRolePermissions` / fallback role list. `RoleDto.isGodMode` added. Test `AdminService_RoleIdsDoNotHaveRolePrefix` now checks "no fallback roles".
+
+**Verified on a throwaway clone (API on :5299, dropped afterwards):**
+
+| Login | God | Task | Menus | Menu GET / write | Approvals API |
+|---|---|---|---|---|---|
+| developer | yes | yes | all 74 + Developer Studio | 200 / 200 | 200 |
+| superadmin | no | yes | 71 (no Dev Studio, no Menu Mgmt) | 200 / 403 | 200 |
+| hr (company_hr) | no | yes | 38 | 403 / 403 | 200 |
+| manager (role_mgr) | no | yes | 33 | 403 / 403 | 200 |
+| employee (role_emp) | no | no | 7 (same as before) | 403 / 403 | 403 |
+| ranmeet (role_fin), wanjiku (group_hr) | no | yes | 22 / 53 | 403 / 403 | 200 |
+
+Rule 5 proof: with `task.view`/`approvals.*` revoked from `role_mgr`, the manager still got Task + approvals API (LINE_MANAGER step + direct reports). With all matrices inactive, Task disappeared and the API returned 403. Nesting a child under a child → 400. Staff token carries `api_permission` (`attendance.view`, `employees.view`); session does not.
+
+**Counts:** menus 89, permissions 114 → **115** (`menus.manage`), role_permissions 678 → **668** (−10 `dev.*`), permission_implications **18**, god-mode roles **1**.
+
+**After deploy:** everyone must log in again — old tokens have no `god_mode`/`api_permission` claims (developer would get 403 until re-login). Approver status in the API is fixed at login; the sidebar re-checks on every load.
+
+**> Code correction and static values (not changed, need a decision):**
+- `CurrentUserService.IsSuperAdmin` (90 usages) matches role ids/names (`superadmin`, `role_super`, "Super Admin") and the tenant query filters use it. Candidate: a `roles.allCompanies` flag.
+- `ApprovalVisibilityRules.RoleMayTakeStep` maps routing codes to role families by string (`FIN`, `HR`). Candidate: a routing-code → role mapping table.
+- `AdminService.SelfServicePermissionCodes` (portal.* added to every role) — see Step 6 notes.
+
+**Carried forward:** Payslips self-only endpoint (Step 2 note). Step 6 Role Permissions screen spec added under Step 6 in §4.
 
