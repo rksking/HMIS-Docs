@@ -11,8 +11,8 @@ Analysis date: 2026-10-07 (live DB `HRMSCore_Local`, read-only queries)
 |---|---|---|
 | 0 | Backup (DB + RBAC table snapshots) | Done 2026-10-07 |
 | 1 | Menu data cleanup | Done 2026-10-07 |
-| 2 | Permission data cleanup | Not started |
-| 3 | Link menus ↔ permissions (FKs) | Not started |
+| 2 | Permission data cleanup | Done 2026-10-07 |
+| 3 | Link menus ↔ permissions (FKs) | Done 2026-10-07 |
 | 4 | Backend: policies, dynamic Task menu, God-mode flag | Not started |
 | 5 | Frontend: route guard, delete duplicate routes/views | Not started |
 | 6 | UI: role grants by menu tree, merge Permission page into Menus | Not started |
@@ -234,3 +234,70 @@ Script: `docs/db_changes.sql` → "RBAC Step 1" block (one transaction, idempote
 **Counts:** menus 107 → **89** (89 active, 89 visible). 0 orphans, 0 empty parents, 0 duplicate routes. `permissions` / `role_permissions` / `roles` unchanged (156 / 860 / 15).
 
 **Carried forward:** Step 5 — `Sidebar.tsx` hardcoded `NAV_SECTIONS` fallback (incl. `/admin/backup`, which has no menu) and `OVERVIEW` special case. Step 3 — `permissionModule` values still mismatched (e.g. `ATT_OVERTIME` "Overtime", `ATT_ROSTER` "Shift Management").
+
+### Step 2 — Permission data cleanup (2026-10-07)
+
+Script: `docs/db_changes.sql` → "RBAC Step 2" block (one transaction, idempotent; re-run changed 0 rows). Restore: Step 0 Option B. `dotnet build` 0 errors, `tsc --noEmit` clean.
+
+**F5 correction:** 4 codes were not unused. Code checks them as constants: `attendance.dayrequest.hr` (DayRequestRules), `attendance.regularisation.hr` (RegularisationRules), `leave.proof.waive` (LeaveProofRules), `recruitment.vacancy_notify` (NotificationService.Recruitment). Kept.
+
+**Wired.** Each new code was granted to every role holding the endpoint's old code, so access is unchanged:
+
+| Code | Endpoint | Grant change |
+|---|---|---|
+| `permissions.view` / `.manage` | `AdminController` permissions GETs / writes (F7: `SYS_PERM` menu now matches its API) | from `roles.manage` |
+| `roles.view` / `.create` / `.edit` / `.delete` | roles GETs / `POST roles/wizard` / PUT, permissions, users, status / DELETE | from `roles.manage` |
+| `users.view` / `.create` / `.edit` | users GETs + `users/assignable` / POST + wizard / PUT | from `users.manage`; `users.create` revoked from COMPANY_HR (it had no effect before) |
+| `employees.transfer` | `POST employees/{id}/transfer` | +HR_MANAGER |
+| `dashboard.employees.view` | `GET employees/dashboard-metrics` (handler alias still lets `employees.view` pass) | — |
+| `companies.duplicate` | `POST companies/duplicate-masters` | — |
+| `payroll.config.manage` | `PUT payroll/settings` | +FINANCE_MANAGER |
+| `backup.manage` | `GET config/backup`, `POST config/restore` | — |
+| `settings.view` | `GET config/company` | — |
+| `portal.attendance.view` | `GET attendance/my-record` (had no policy) | — (all 15 roles hold it) |
+| `attendance.approve` | `POST attendance/adjustments/decide` (was `attendance.manage`) | **Approved change:** LINE_MANAGER, EMS and COMPANY_HR can now decide; ADMIN can no longer decide (it had no menu for it) |
+| `letters.signatories.manage` / `.upload` | `AuthorizedSignatoriesController` writes / `upload-signature` (part of F8). GETs stay `[Authorize]`, because the offer and letter drawers used by LM/COMPANY_HR call them | — |
+| `task.view` | **new permission**, granted to the 11 `approvals.view` roles (same as the handler alias). Visibility rule is Step 4 | — |
+
+Menus: `SYS_ROLE` → `roles.view`, `SYS_USER` → `users.view`. Sidebar fallback codes were updated to match (that fallback is deleted in Step 5).
+
+**Deleted (43, with 194 grants).** No role lost access; every holder still passes through the endpoint's real code:
+`roles.manage users.manage users.delete permissions.create/edit/delete reports.view (all holders already had reporting.view) reports.export reporting.dashboard audit.export attendance.edit attendance.regularise attendance.team banks/costcentres/departments/employmenttypes/grades/jobtitles/locations.manage (OrgMasters uses orgmasters.manage) currencies.view groups.manage groups.realign groups.view dev.maintenance_mode documents.verify employees.bank.view employees.delete employees.salary.view employees.salary.edit employees.terminate leave.approval leave.cancel leave.policies.manage leave.types.manage leave.team loans.manage payroll.edit payroll.process recruitment.post requisitions.approve shifts.assign shifts.overrides.manage`.
+`PermissionAuthorizationHandler` aliases no longer mention `reporting.dashboard`, `groups.view` or `recruitment.post`.
+
+**Counts:** permissions 156 → **114**; role_permissions 860 → **678** (+13 grants, −1 revoke, −194 deleted). 0 orphan grants, 0 menus with an unknown code, 0 controller policies missing from `permissions`.
+
+**Codes left without a policy (by design):** the 4 rule constants above; `portal.dashboard.view` and `portal.leave.view` (handler aliases + `PermissionGate`); `letters.signatories.view` (menu only); `task.view` (Step 4); `payroll.payslips.view` (see below).
+
+**Carried forward:**
+- **Payslips (follow-up):** the `PAY_SLIPS` menu needs `payroll.payslips.view` (ESS holds it), but the page calls `payroll.view` endpoints, so ESS gets 403. Wiring it to `cycles/{m}/payslips/{employeeId}` would let ESS fetch anyone's payslip. A self-only "my payslips" endpoint is needed.
+- **Step 4:** `PermissionAuthorizationHandler` still has hardcoded aliases (portal → module, task ⇔ approvals, org-master read for recruiters) and the God-mode role-id check. Replace them with data, or keep them explicitly. `MenusController` writes still have no policy (F8).
+- **Risk noted:** employee salary/bank fields are not field-gated. Their codes were deleted because nothing checked them; field-level gating is a separate feature.
+
+### Step 3 — Link menus ↔ permissions (2026-10-07)
+
+Script: `docs/db_changes.sql` → "RBAC Step 3" block (schema + one transaction, idempotent; re-run changed 0 rows). Restore: Step 0 Option B. If needed, drop the new links first: `ALTER TABLE menus DROP CONSTRAINT FK_menus_permission; ALTER TABLE permissions DROP CONSTRAINT FK_permissions_menu;` (Option B lists columns, so the new ones stay NULL). `dotnet build` 0 errors, `tsc --noEmit` clean, `RecruitmentNotificationTests` 9/9.
+
+**Schema:** `menus.permissionId` and `permissions.menuId` (`nvarchar(36) NULL`), with foreign keys `FK_menus_permission` / `FK_permissions_menu` and indexes. `permissions.module` was made nullable so the code no longer writes it.
+
+**Backfill (approved mapping):**
+- `menus.permissionId` comes from `permissionCode`, on the 75 menus that have a route. Group rows without a route stay NULL. TASK keeps `task.view`.
+- `permissions.menuId`: every one of the 114 permissions is linked, one screen each. A shared code goes to the main screen: `attendance.view/.manage/...` → ATT_DASH, `payroll.view/.run/...` → PAY_RUNS, `approvals.view/.manage` + `task.view` → TASK, `settings.* backup.manage` → SYS_SETTINGS (`/admin/backup` has no menu). The full map is in the script's `@map`.
+- Checks: 0 permissions without a menu, 0 routed menus without a permission, 0 menus whose FK code differs from the old `permissionCode`.
+
+**Code:**
+- Entities: `Menu.PermissionId` / `Permission` / `Permissions`, `Permission.MenuId` / `Menu`. `Menu.PermissionModule`, `Menu.PermissionCode` and `Permission.Module` were removed from the entities. The columns stay until Step 7.
+- `MenuService` sidebar: a screen is visible only when the role holds `menu.Permission.Code`. The module fallback and the "Common = everyone" rule (S3) are removed. Before/after check of each role's visible menus: **529 = 529 role–menu pairs, no difference**.
+- `MenuService`: the TASK auto-insert (F10) was removed early. It referenced the retired columns, and the row already exists in the DB. The TASK visibility special case stays until Step 4.
+- Menu create/update still take `permissionCode` from the drawers, but an unknown code is now rejected (F2). Deleting a menu that still has permissions is blocked ("move them first").
+- Permissions API: `module` is now derived from the menu's group name (for example "Attendance"). New fields `menuId` and `menuName`. Create/update accept `menuId`; otherwise the sent module name is resolved to a menu. Deleting a permission that a menu uses as its view permission is blocked. Five copied DTO mappers were merged into `ToPermissionDto`.
+- `MenuDto.permissionModule` is now the group name (for the badges on the current Menu Management page). It was removed from `MenuNavDto` and from the create/update requests.
+
+**Counts:** menus 89, permissions 114, role_permissions 678 (unchanged).
+
+**> Code correction and static values (found in Step 3, for Step 4):**
+- `AdminService.CreatePermissionAsync` auto-grants new permissions to hardcoded role ids `superadmin`, `role_super`, `admin` (S1).
+- `AdminService.GetAllPermissionsAsync` falls back to the in-code `SeedPermissions` list when the query fails (a fake fallback, follow.md #1). The `DefaultRolePermissions` dictionary is also hardcoded.
+
+**Carried forward:** Step 6 replaces the free-text module and permission-code inputs with menu and permission selects, and then removes the derived `module` / `permissionModule` fields. Payslips self-only endpoint, handler aliases and `MenusController` policies stay as listed in Step 2 (user confirmed 2026-10-07).
+
