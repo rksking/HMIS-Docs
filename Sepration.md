@@ -1,6 +1,6 @@
 # Separation (Resignation) Module — Design & Implementation Plan
 
-> Status: **revision 5 (2026-10-10). Steps 1–2 ✅ done. Next: Step 3 — ESS Initiate resignation (prompt in §11).**
+> Status: **revision 6 (2026-10-10). Steps 1–3 ✅ done (3 = 3a lifecycle in days + 3b ESS resign). Next: Step 4 — approvals + notifications (prompt in §11).**
 > Scope: **RESIGNATION only** (probation confirmation, termination and the confirmation workflow are out of scope).
 > Sources: `docs/Sepration Workflow (1).docx`, `docs/Staff Exit Clearance Form.docx`, HR notes (Memo 9/10/26),
 > reference task-tracker screenshot (2026-10-10).
@@ -37,14 +37,18 @@ resolved for it get an **email**, a **bell notification** and a **/task entry** 
 
 ### 1.1 Last working day (LWD)
 
-- **Confirmed employee:** LWD = resignation date + notice period days.
-- **Probation employee:** LWD = resignation date + `separation_config.probationNoticeDays` (7, configurable per company).
-- Notice and probation days come from the **Employment Type master**, copied onto the employee at hire. Add Employee
-  already fills them from the selected type and lets HR edit them (`CreateEmployeeModal.tsx` — no change needed).
-- **LWD change:** the employee requests a date + reason → the line manager approves → LWD is fixed.
-  superadmin / developer can set it directly (`separation.lwd.override`).
-- **Recovery days** = notice days not served (notice period − days between resignation and LWD); shown in the tracker
-  header and carried into F&F.
+- **Official LWD = resignation date + N − 1** (the resignation day is day 1: resign 1 Oct, 30 days → 30 Oct).
+  - Confirmed employee: N = the employee's notice period days.
+  - On probation (`employmentStatus = PROBATION`, or confirmation date after the resignation date): N = the employment
+    type's **probation notice days** (`employment_types.probationNoticeDays`).
+- Notice, probation days and probation notice days come from the **Employment Type master** (days only — no months);
+  notice and probation days are copied onto the employee at hire. Confirmation date = joining date + probation days.
+- **Resignation date:** today or later (company time zone). Back-dating only for superadmin / developer.
+- **LWD by agreement:** on the resign form (or later via Change LWD) the employee can enter a different LWD — earlier or
+  later than official — with a reason; the line manager approves it and it is fixed. superadmin / developer can set it
+  directly (`separation.lwd.override`, Step 4).
+- **Recovery days** = days the agreed LWD is earlier than the official LWD; shown in the tracker header and carried
+  into F&F.
 
 ### 1.2 Clearance timing
 
@@ -97,7 +101,8 @@ is a group, Refresh). A readiness banner lists active stages that have nobody ma
    status. Active MAPPED stages without anyone show **"Not mapped"**. **Edit** opens a **SideDrawer**: handled by
    (reporting manager / mapped employees — employee and system stages keep their type), employee search + chips,
    email and bell switches, and On/Off for clearance stages only.
-2. **General** — probation notice days (≥ 1), days before LWD to start clearance (≥ 0), Parallel / Sequential.
+2. **General** — days before LWD to start clearance (≥ 0), Parallel / Sequential. (Probation notice days moved to
+   the Employment Type master in Step 3a.)
 3. **Checklists** — pick a clearance or HR stage; add / edit / switch off lines (SideDrawer), move up / down.
 
 Rules enforced by the API: company must be in the user's workspace; only active employees of that company can be
@@ -141,7 +146,7 @@ tenant query filters on the company-scoped tables). Schema in `docs/db_changes.s
 
 | Table | Purpose |
 |---|---|
-| `separation_config` | Per company: `probationNoticeDays`, `clearanceTriggerLeadDays`, `clearanceMode`. |
+| `separation_config` | Per company: `clearanceTriggerLeadDays`, `clearanceMode` (`probationNoticeDays` moved to `employment_types` in Step 3a). |
 | `separation_stages` | Per company, 13 stages: `code`, `name`, `stageGroup`, `sequenceOrder`, `assigneeType`, `requiresHandover`, `notifyEmail`, `notifyBell`, `isActive`. |
 | `separation_stage_assignees` | Employees mapped to a stage (`stageId`, `employeeId`, `isActive`). Not seeded — HR maps people. |
 | `separation_checklist_items` | Yes/No/N/A lines per stage (seeded from the Exit Clearance Form). |
@@ -198,13 +203,16 @@ task; the stage name is the title). Extend the `entityType` union in `frontend/s
 
 - **Backend:** `Domain/Entities/SeparationEntities.cs` ✅, `Application/DTOs/Separation/SeparationConfigDtos.cs` ✅,
   `Application/Common/Interfaces/ISeparationConfigService.cs` ✅, `Infrastructure/Services/SeparationConfigService.cs` ✅,
-  `Api/Controllers/SeparationConfigController.cs` ✅ (`api/separation-config`); to come: `ISeparationService` /
-  `SeparationService`, `NotificationService.Separation.cs`, `SeparationController`.
+  `Api/Controllers/SeparationConfigController.cs` ✅ (`api/separation-config`); `ISeparationService` /
+  `SeparationService` / `SeparationController` (`api/separation`) / `SeparationDtos.cs` ✅ (Step 3); to come:
+  `NotificationService.Separation.cs`, approval / task services.
 - **Frontend:** `src/modules/separation/` — `masters/SeparationConfigView.tsx` ✅, `components/` ✅
   (SeparationStagesTab, StageMappingDrawer, SeparationGeneralTab, SeparationChecklistTab, ChecklistItemDrawer),
-  `api.ts`, `types.ts`, `constants.ts`, `index.ts` ✅; to come: portal view + InitiateResignationDrawer,
-  LwdRequestDrawer, TaskActionDrawer, HandoverDrawer, FnfDrawer, FnfPaymentDrawer, ExitInterviewDrawer, SeparationTracker.
-  Routes: `src/app/(dashboard)/masters/separation-config/page.tsx` ✅, `src/app/(dashboard)/portal/separation/page.tsx` (Step 3).
+  `api.ts`, `types.ts`, `constants.ts`, `index.ts` ✅; Step 3 ✅: `portal/PortalSeparationView.tsx`, `components/`
+  SeparationRequestDrawer (tabs Resign / Change LWD / Withdraw → InitiateResignationForm, LwdRequestForm,
+  WithdrawResignationForm), SeparationCaseCard, EmploymentFactsCard, SeparationTimeline; to come: TaskActionDrawer,
+  HandoverDrawer, FnfDrawer, FnfPaymentDrawer, ExitInterviewDrawer, SeparationTracker.
+  Routes: `src/app/(dashboard)/masters/separation-config/page.tsx` ✅, `src/app/(dashboard)/portal/separation/page.tsx` ✅.
 
 ---
 
@@ -214,8 +222,9 @@ task; the stage name is the title). Extend the `entityType` union in `frontend/s
 |---|---|---|
 | 1 | DB + domain foundations: script, entities, DbContext, menus, permissions, grants, seeds; verified on a DB clone (2 runs, idempotent) and applied to `HRMSCore_Local2`. Add Employee auto-fill confirmed. | ✅ Done 2026-10-10 |
 | 2 | **Separation Config** (Masters & Configuration): API + screen — Stages & mapping (employee mapping drawer), General, Checklists; `sp_SeedSeparationConfig`; view/manage permissions; grants fixed to real role ids. | ✅ Done 2026-10-10 |
-| 3 | **ESS Initiate resignation:** portal page, Initiate drawer, LWD calc (confirmed / probation), recovery days, LWD change request, withdraw. | ⏳ Next |
-| 4 | **Approvals + notifications:** line manager + LWD request + HR on `/task`; email + bell per stage mapping; `IsApproverAsync` for mapped employees; login block. | |
+| 3a | **Employee lifecycle in days:** probation days everywhere (months removed), `employmentStatus`, probation end / separation / LWD dates, probation notice days on the Employment Type master. | ✅ Done 2026-10-10 |
+| 3b | **ESS Initiate resignation:** portal page, Separation Request drawer (Resign / Change LWD / Withdraw), LWD calc (confirmed / probation), LWD by agreement, recovery days, withdraw. | ✅ Done 2026-10-10 |
+| 4 | **Approvals + notifications:** line manager + LWD request + HR on `/task`; email + bell per stage mapping; `IsApproverAsync` for mapped employees; login block; `employmentStatus = NOTICE`. | ⏳ Next |
 | 5 | **Clearance tracker:** task generation, trigger date job, parallel / sequential, checklist + handover / KT upload, retrigger. | |
 | 6 | **HR final clearance + F&F Process + F&F Paid.** | |
 | 7 | **Exit interview + Experience cum Relieving Letter + release.** Full cross-role E2E + report. | |
@@ -271,38 +280,83 @@ task; the stage name is the title). Extend the `entityType` union in `frontend/s
   un-mapping, guard rails, general settings, checklist add / switch off / reorder all correct; 6 audit rows written.
   Clone dropped; dev DB: employees unchanged (3,876), 111 separation grants, 15 roles see Separation, 0 mappings.
 
-## 11. Next-step prompt (Step 3) — paste into a new chat
+### Step 3a — Employee lifecycle in days (2026-10-10)
+- User decisions: LWD = date + N − 1; probation in **days only**; lifecycle columns on `employment_details` (one row
+  per company); probation notice days on the Employment Type master; Confirmation workflow = its own module later.
+- `docs/db_changes.sql` new block: `employment_types.defaultProbationDays` + `probationNoticeDays`;
+  `employment_details.probationPeriodDays`, `probationEndDate`, `employmentStatus`, `separationDate`, `lastWorkingDay`;
+  `offers.probationDays`; `candidate_onboarding_profiles.probationDays`; one-time conversion; month columns and
+  `separation_config.probationNoticeDays` dropped (`sp_DropColumnIfExists`). Step 1 block no longer creates
+  `probationNoticeDays`.
+- Code: `EmploymentDetail.ApplyProbation(days, confirmationDate?)` + `EmploymentStatuses`; ~35 backend / frontend files
+  moved from months to days (Employment Type master + drawer, Add Employee, Assignment, Onboarding activation, offer
+  drawers and letter snapshot, `/task` offer details, ESS profile, import template "Probation (Days)", letters'
+  `{{probation_end_date}}`). Dashboards count probation from `employmentStatus`. Employment-type API validates
+  probation ≥ 0 and probation notice ≥ 1.
+- Verified on a clone (script ×2, 8/8 API checks), then applied to dev: 278 PROBATION / 3,595 CONFIRMED, employees
+  3,876 unchanged, no month columns left. Pre-change backup `/var/opt/mssql/data/s3a.bak` in the `sqlserver` container.
+
+### Step 3b — Self Service → Separation (2026-10-10)
+- API `api/separation`: `GET me`, `GET lwd-preview`, `POST` (initiate), `POST {id}/lwd-request`, `POST {id}/withdraw`;
+  policies `separation.view` / `.initiate` / `.lwd.request` / `.withdraw`. The caller's record is found by user id or
+  e-mail (same rule as login), in the picked employment or the request's company; other people's cases → 404.
+- Rules: resignation date ≥ company-local today unless superadmin / developer; reason required; one open case; line
+  manager = reporting manager or mapped employee; HR approval needs a mapped employee; a different LWD (earlier or
+  later) needs a reason and stays PENDING; withdraw only in PENDING_L1 / PENDING_HR. Reference `SEP-{year}-{0001}` per
+  company. Trail in `separation_approvals` (RESIGNATION SUBMITTED / WITHDRAWN, LWD_REQUEST REQUESTED); audit
+  `entityType = Separation`; `employment_details.separationDate` / `lastWorkingDay` set on submit, cleared on withdraw.
+- Screen `/portal/separation` (layout of `/portal/attendance`) with the **Separation Request** drawer (like New
+  Request; tabs Resign / Change LWD / Withdraw shown only when allowed).
+- Fix: `separationErrorMessage` now reads `errors[0]` (ApiResponse.Fail), so Step 2 refusals also show their text.
+- Bug found in testing and fixed: "today" used UTC (EAT is +3) → now `CompanyClock.TodayAsync`.
+- Checks: `dotnet build` 0 errors, `tsc --noEmit` 0 errors, backend tests 322/322, clone E2E 28/28 (employee, line
+  manager, HR, superadmin: preview confirmed / probation, refusals, initiate, trail, open case, LWD request, other users
+  blocked, withdraw, numbering, back-date). Clone dropped. Dev DB has no separation cases and **nobody mapped** — HR
+  must map "Company HR approval" (and a line-manager fallback for staff without a manager) before anyone can resign.
+
+> **Code correction and static values** (follow.md #10)
+> - `employmentStatus` is set at hire / backfill; nothing moves it to CONFIRMED when the confirmation date passes — the
+>   Confirmation workflow module (later) will. Separation also counts "confirmation date after the resignation date"
+>   as probation, so a stale PROBATION status is the only risk.
+> - `LettersService` template preview still uses a sample `probation_end_date` = joining + 6 months (sample data only).
+> - One "Extension of probation" letter template's own wording says "three (3) months" — HR text, not changed.
+> - Offer numbers start at `OFF-{year}-0101` (hard-coded 100 base) and loan numbers use a random suffix — not copied.
+> - Assignment / Add Employee still default notice days to 30 when the request has none (existing behaviour).
+
+## 11. Next-step prompt (Step 4) — paste into a new chat
 
 ```
-Read docs/follow.md and follow every rule. Read docs/sepration.md (plan, §1, §8 step table, §10 step log) and memory
-"separation-module-plan". Steps 1–2 of the Separation (resignation-only) module are done.
+Read docs/follow.md and follow every rule (design reference: /portal/attendance page + its New Request drawer).
+Read docs/sepration.md (§1, §3.2–3.3, §6, §8 step table, §10 step log) and memories "separation-module-plan" and
+"employee-lifecycle-rules". Steps 1–3 of the Separation (resignation-only) module are done.
 
-Do Step 3 — ESS "Initiate resignation" on Self Service → Separation (/portal/separation, menu-separation, permission
-separation.view; actions separation.initiate / .withdraw / .lwd.request).
+Do Step 4 — approvals + notifications on /task:
+1. /task entity types SEPARATION (LINE_MANAGER_APPROVAL, HR_APPROVAL) and SEPARATION_LWD (LWD_REQUEST) in
+   ApprovalsService.GetPendingApprovalsAsync / DecideTaskAsync, same per-entity pattern as leave / requisition; extend
+   the entityType union in frontend/src/modules/task/types.ts and the TaskDecisionDrawer details (employment facts,
+   resignation date, official / requested LWD, recovery days, reason, trail).
+2. Who acts: LINE_MANAGER_APPROVAL → reporting manager, else the stage's mapped employees; HR_APPROVAL → mapped
+   employees (any one can act). Extend UserAccessResolver.IsApproverAsync so mapped employees get the
+   grantedToApprovers permissions. superadmin / developer see everything.
+3. Decisions: line manager approve → PENDING_HR (a pending LWD request is decided in the same step: approve → fixed
+   ApprovedLwd + RecoveryDays; reject → official LWD stays); reject → REJECTED (remarks required). HR approve →
+   HR_APPROVED, employees.accessBlockedAt = now (login refused), employment_details.employmentStatus = NOTICE,
+   ClearanceTriggerDate = LWD − clearanceTriggerLeadDays; HR reject → REJECTED. LWD requests raised after L1 approval
+   go to the line manager on their own. separation.lwd.override lets superadmin / developer set the LWD directly.
+   Every decision writes separation_approvals + audit_log.
+4. Notifications per stage mapping (notifyEmail / notifyBell): email via IEmailService with templates per event code
+   (SEPARATION_SUBMITTED, SEPARATION_STAGE_ASSIGNED, SEPARATION_DECIDED, SEPARATION_LWD_DECIDED) from the email
+   template tables (no hard-coded text); bell via a new NotificationService.Separation.cs partial (Kind "separation",
+   Link to the /task item). The employee is told of every decision.
+5. Login block: AuthService refuses a user whose employee has accessBlockedAt set (clear message).
 
-Scope:
-1. Backend: ISeparationService + SeparationService + SeparationController (api/separation), DTOs in
-   Application/DTOs/Separation. Endpoints: my separation (current case + my employment facts), LWD preview, initiate,
-   request LWD change, withdraw (only before HR approval).
-2. Facts come from the DB, never literals: notice days / probation months / status / confirmation date are on
-   EmploymentDetail (NoticePeriodDays, ProbationPeriodMonths, Status, ConfirmationDate); probation notice days from
-   separation_config. Confirmed: LWD = resignation date + notice days. Probation: + probationNoticeDays.
-   Recovery days = notice days not served. Reference number: follow the existing numbering pattern used elsewhere.
-3. Refuse initiation (clear message) when: an open case exists; the line-manager stage cannot be resolved (no reporting
-   manager and nobody mapped) or HR_APPROVAL has nobody mapped (point to Masters & Configuration → Separation Config).
-4. Status after submit = PENDING_L1 with a separation_approvals trail. /task routing, emails and bell notices are Step 4 —
-   do not build them here.
-5. Frontend: thin route src/app/(dashboard)/portal/separation/page.tsx; portal view in src/modules/separation; page root
-   space-y-6, unboxed header, one action bar; InitiateResignationDrawer and LwdRequestDrawer as 50% SideDrawers (no
-   modals); show employment facts, computed LWD, status timeline, Withdraw.
+Before coding, present the Step 4 plan for approval (follow.md #9) with open points, e.g.: is a reason required and
+shown to the employee on rejection; should the login block start at HR approval or on the LWD; what happens to an open
+case's LWD request when the line manager rejects the resignation.
 
-Before coding, present the Step 3 plan for approval (follow.md #9), including these open points:
-- Is LWD = resignation date + N days, or + N − 1 (the HR note reads "resign 1 Oct → LWD 30 Oct" for 30 days)?
-- What counts as "probation": EmploymentDetail.Status = PROBATION, or no ConfirmationDate / confirmation date in future?
-- Can the employee pick a resignation date in the past or future, or is it always today?
-
-Every DB change goes in docs/db_changes.sql (idempotent; live schema differs from docs/dbscript/tables_proc_all.sql —
-check INFORMATION_SCHEMA). Test writes only on a throwaway DB clone. After the step: tsc --noEmit and dotnet build clean,
-role E2E (employee, line manager, HR), update docs/sepration.md (step table, step log, next prompt), docs/policies.md
-(next section after §86), the sep-workflow artifact (Build steps + manual test), memory, and write the Step 4 prompt.
+Every DB change goes in docs/db_changes.sql (idempotent; check INFORMATION_SCHEMA — the live schema differs from
+docs/dbscript/tables_proc_all.sql). Test writes only on a throwaway DB clone (method in memory); map test people on the
+clone only. After the step: tsc --noEmit and dotnet build clean, role E2E (employee, line manager, HR), update
+docs/sepration.md (step table, step log, next prompt), docs/policies.md (next section after §88), the sep-workflow
+artifact (Build steps + manual test), memory, and write the Step 5 prompt.
 ```
