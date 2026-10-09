@@ -1,6 +1,6 @@
 # Separation (Resignation) Module — Design & Implementation Plan
 
-> Status: **revision 6 (2026-10-10). Steps 1–3 ✅ done (3 = 3a lifecycle in days + 3b ESS resign). Next: Step 4 — approvals + notifications (prompt in §11).**
+> Status: **revision 7 (2026-10-10). Steps 1–4 ✅ done (4 = approvals + notifications on /task, login block). Next: Step 5 — clearance tracker (prompt in §11).**
 > Scope: **RESIGNATION only** (probation confirmation, termination and the confirmation workflow are out of scope).
 > Sources: `docs/Sepration Workflow (1).docx`, `docs/Staff Exit Clearance Form.docx`, HR notes (Memo 9/10/26),
 > reference task-tracker screenshot (2026-10-10).
@@ -60,7 +60,9 @@ resolved for it get an **email**, a **bell notification** and a **/task entry** 
 
 ### 1.3 Login block
 
-On HR approval: `employees.accessBlockedAt = now` and the login path refuses that employee's user. Full deactivation
+On HR approval: `employees.accessBlockedAt` = **00:00 company time on the day after the LWD** (user, Step 4 — the
+employee works the notice and does the exit interview first). From then on, sign-in and token refresh are refused once
+every active employee record of the user is blocked (god roles never). A later LWD change moves it. Full deactivation
 (`Status = RESIGNED`, `IsActive = 0`) happens at release.
 
 ---
@@ -224,8 +226,8 @@ task; the stage name is the title). Extend the `entityType` union in `frontend/s
 | 2 | **Separation Config** (Masters & Configuration): API + screen — Stages & mapping (employee mapping drawer), General, Checklists; `sp_SeedSeparationConfig`; view/manage permissions; grants fixed to real role ids. | ✅ Done 2026-10-10 |
 | 3a | **Employee lifecycle in days:** probation days everywhere (months removed), `employmentStatus`, probation end / separation / LWD dates, probation notice days on the Employment Type master. | ✅ Done 2026-10-10 |
 | 3b | **ESS Initiate resignation:** portal page, Separation Request drawer (Resign / Change LWD / Withdraw), LWD calc (confirmed / probation), LWD by agreement, recovery days, withdraw. | ✅ Done 2026-10-10 |
-| 4 | **Approvals + notifications:** line manager + LWD request + HR on `/task`; email + bell per stage mapping; `IsApproverAsync` for mapped employees; login block; `employmentStatus = NOTICE`. | ⏳ Next |
-| 5 | **Clearance tracker:** task generation, trigger date job, parallel / sequential, checklist + handover / KT upload, retrigger. | |
+| 4 | **Approvals + notifications:** line manager + LWD request + HR on `/task`; email + bell per stage mapping; `IsApproverAsync` for mapped employees; login block; `employmentStatus = NOTICE`. | ✅ Done 2026-10-10 |
+| 5 | **Clearance tracker:** task generation, trigger date job, parallel / sequential, checklist + handover / KT upload, retrigger. | ⏳ Next |
 | 6 | **HR final clearance + F&F Process + F&F Paid.** | |
 | 7 | **Exit interview + Experience cum Relieving Letter + release.** Full cross-role E2E + report. | |
 | later | **Separation Reports** (HR-side list / reports) — D1. | |
@@ -323,40 +325,68 @@ task; the stage name is the title). Extend the `entityType` union in `frontend/s
 > - Offer numbers start at `OFF-{year}-0101` (hard-coded 100 base) and loan numbers use a random suffix — not copied.
 > - Assignment / Add Employee still default notice days to 30 when the request has none (existing behaviour).
 
-## 11. Next-step prompt (Step 4) — paste into a new chat
+### Step 4 — Approvals + notifications (2026-10-10)
+- User answers: login blocked **after the LWD** (not at HR approval); reject remarks **required and shown** to the
+  employee; a pending LWD request is **closed with** a rejected resignation; default e-mail templates **seeded and enabled**.
+- `SeparationApprovalRules.cs` (who acts, /task items, decisions). `ApprovalsService`: block 2c'' in the inbox, 2d'' in
+  `DecideApprovalAsync`, review details (facts, LWDs, recovery days, trail), tab `SEPARATION`. Item ids: case id
+  (`SEPARATION`), LWD request trail id (`SEPARATION_LWD`). `ApprovalDecisionRequest` + `AcceptRequestedLwd`, `OverrideLwd`.
+- Decisions: line manager approve → `PENDING_HR` (pending LWD accepted or kept official in the same step); reject →
+  `REJECTED` + dates cleared. HR approve → `HR_APPROVED`, `currentStage` = next active stage, `NOTICE`, clearance trigger
+  = LWD − lead days, `accessBlockedAt` = day after LWD (company tz, stored UTC). Later LWD approval re-computes both.
+  Override (`separation.lwd.override`, superadmin / developer) → trail `OVERRIDDEN`. Every decision → trail + `audit_log`.
+- `UserAccessResolver.IsApproverAsync`: mapped to an active stage, or line manager of an open case → approver grants.
+- `AuthService`: login + refresh refused after `accessBlockedAt`.
+- `NotificationService.Separation.cs` + 4 events in `NotificationTemplates` (catalog, placeholders, bell defaults);
+  `NotifyUsersAsync` got `bell` / `email` switches (stage `notifyBell` / `notifyEmail`). Sent from `SeparationService`
+  (submit, LWD request) and after each decision. `sp_SeedSeparationNotifications` (db_changes.sql) — also run by
+  `SeparationConfigService` for a company seeded on first open.
+- Frontend: `/task` tab **Separation**, entity styles, `TaskDecisionDrawer` separation fields, Accept / Keep LWD choice,
+  override date (permission-gated), no Return; `onDecide` now takes an extras object.
+- Checks: `dotnet build` 0 errors, `tsc --noEmit` 0 errors, tests 322/322; clone E2E **34/34** (3 cases: approve path with
+  earlier LWD + later LWD request, reject with pending LWD, developer override; login/refresh block; mapped ess → task.view;
+  14 e-mails SENT). Script ×2 on the clone (60 / 60 rows), then applied to dev (employees 3,876; no cases; nobody mapped).
+
+> **Code correction and static values** (follow.md #10)
+> - Bell text falls back to `NotificationTemplates.BellDefaults` (code) when a company has no active template — existing
+>   pattern, separation lines added the same way. Stage label "Change of last working day" for LWD items is in code.
+> - `ApprovalsService.ResolveApproverContextAsync` still decides "HR" from role codes (`HR_MANAGER`, `COMPANY_HR`, …) for
+>   other modules; separation does not use it (mapped employees only).
+> - `/task` History tab does not list separation decisions yet (the case trail does) — follow-up.
+
+## 11. Next-step prompt (Step 5) — paste into a new chat
 
 ```
 Read docs/follow.md and follow every rule (design reference: /portal/attendance page + its New Request drawer).
-Read docs/sepration.md (§1, §3.2–3.3, §6, §8 step table, §10 step log) and memories "separation-module-plan" and
-"employee-lifecycle-rules". Steps 1–3 of the Separation (resignation-only) module are done.
+Read docs/sepration.md (§1.2, §2, §3.2–3.3, §4, §8 step table, §10 step log incl. Step 4) and memories
+"separation-module-plan" and "employee-lifecycle-rules". Steps 1–4 of the Separation (resignation-only) module are done.
 
-Do Step 4 — approvals + notifications on /task:
-1. /task entity types SEPARATION (LINE_MANAGER_APPROVAL, HR_APPROVAL) and SEPARATION_LWD (LWD_REQUEST) in
-   ApprovalsService.GetPendingApprovalsAsync / DecideTaskAsync, same per-entity pattern as leave / requisition; extend
-   the entityType union in frontend/src/modules/task/types.ts and the TaskDecisionDrawer details (employment facts,
-   resignation date, official / requested LWD, recovery days, reason, trail).
-2. Who acts: LINE_MANAGER_APPROVAL → reporting manager, else the stage's mapped employees; HR_APPROVAL → mapped
-   employees (any one can act). Extend UserAccessResolver.IsApproverAsync so mapped employees get the
-   grantedToApprovers permissions. superadmin / developer see everything.
-3. Decisions: line manager approve → PENDING_HR (a pending LWD request is decided in the same step: approve → fixed
-   ApprovedLwd + RecoveryDays; reject → official LWD stays); reject → REJECTED (remarks required). HR approve →
-   HR_APPROVED, employees.accessBlockedAt = now (login refused), employment_details.employmentStatus = NOTICE,
-   ClearanceTriggerDate = LWD − clearanceTriggerLeadDays; HR reject → REJECTED. LWD requests raised after L1 approval
-   go to the line manager on their own. separation.lwd.override lets superadmin / developer set the LWD directly.
-   Every decision writes separation_approvals + audit_log.
-4. Notifications per stage mapping (notifyEmail / notifyBell): email via IEmailService with templates per event code
-   (SEPARATION_SUBMITTED, SEPARATION_STAGE_ASSIGNED, SEPARATION_DECIDED, SEPARATION_LWD_DECIDED) from the email
-   template tables (no hard-coded text); bell via a new NotificationService.Separation.cs partial (Kind "separation",
-   Link to the /task item). The employee is told of every decision.
-5. Login block: AuthService refuses a user whose employee has accessBlockedAt set (clear message).
+Do Step 5 — the clearance tracker:
+1. Task generation: when a case is HR_APPROVED, create separation_tasks for every active post-approval stage
+   (L1_CLEARANCE, ADMIN/FINANCE/AUDIT_LEGAL/IT clearance, HR_FINAL_CLEARANCE, FNF_PROCESS, FNF_PAID, EXIT_INTERVIEW,
+   EXPERIENCE_LETTER) with configuredTriggerDate = ClearanceTriggerDate (WAITING). A daily job (and HR approval after
+   that date) fires them: PENDING + actualTriggerDate; PARALLEL = all clearance stages at once, SEQUENTIAL = one by
+   sequenceOrder. Exit interview opens with the clearance tasks. HR final opens when all clearances are COMPLETED.
+   An LWD change before firing moves configuredTriggerDate.
+2. /task entity type SEPARATION_TASK (title = stage name) for the people the stage resolves to
+   (SeparationApprovalRules.ApproverEmployeeIdsAsync — DIRECT_MANAGER / MAPPED); the action drawer shows the stage's
+   checklist (Yes / No / N/A + remark → separation_clearance_responses); L1_CLEARANCE also needs handover / KT notes
+   and document upload (separation_attachments, blob employee/<companyId>/separation/<separationId>/<category>/).
+3. Tracker screen (reference screenshot, §2): per case — task, status, configured / actual / retriggered dates,
+   assigned to, owner, completed by, documents; Retrigger (separation.task.retrigger) re-opens and re-notifies.
+   Header: location, joining date, notice, resignation date, LWD, recovery days. Decide with the user where it lives
+   (e.g. a Separation tab in the /portal/separation case for the employee, and HR's view from /task).
+4. Notifications: SEPARATION_STAGE_ASSIGNED per task (bell + email per stage switches) via NotifySeparationAsync or
+   a task-level sibling; key per task + retrigger count.
+Stop at clearance — F&F and HR final decisions are Step 6, exit interview + letter Step 7.
 
-Before coding, present the Step 4 plan for approval (follow.md #9) with open points, e.g.: is a reason required and
-shown to the employee on rejection; should the login block start at HR approval or on the LWD; what happens to an open
-case's LWD request when the line manager rejects the resignation.
+Before coding, present the Step 5 plan for approval (follow.md #9) with open points, e.g.: can a clearance task be
+marked "No" (blocked) and what happens then; who may retrigger; do SEQUENTIAL tasks skip inactive stages; does the
+daily job use the company time zone (CompanyClock).
 
-Every DB change goes in docs/db_changes.sql (idempotent; check INFORMATION_SCHEMA — the live schema differs from
-docs/dbscript/tables_proc_all.sql). Test writes only on a throwaway DB clone (method in memory); map test people on the
-clone only. After the step: tsc --noEmit and dotnet build clean, role E2E (employee, line manager, HR), update
-docs/sepration.md (step table, step log, next prompt), docs/policies.md (next section after §88), the sep-workflow
-artifact (Build steps + manual test), memory, and write the Step 5 prompt.
+Every DB change goes in docs/db_changes.sql (idempotent; check INFORMATION_SCHEMA). Test writes only on a throwaway
+DB clone (method in memory); map test people on the clone only. After the step: tsc --noEmit and dotnet build clean,
+role E2E (employee, line manager, mapped clearance people, HR), update docs/sepration.md (step table, step log, next
+prompt), docs/policies.md (next section after §89), the sep-workflow artifact (Build steps + manual test), memory, and
+write the Step 6 prompt.
 ```
