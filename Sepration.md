@@ -1,10 +1,11 @@
 # Separation (Resignation) Module — Design & Implementation Plan
 
-> Status: **revision 10 (2026-10-10). Steps 1–7 ✅ done — the resignation flow is complete from resignation to release (7 = exit interview, Experience cum Relieving Letter, release). Next: Separation Reports (D1) and the blob-path clean-up (`docs/blob_paths.md`); prompt in §11.**
+> Status: **revision 11 (2026-10-10). Steps 1–8 ✅ done — the resignation flow runs from resignation to release, and Reports → Separation (Step 8) is live. Next: Step 9 blob-path clean-up, then Step 10 /letters clean-up; prompts in §11.**
 > Scope: **RESIGNATION only** (probation confirmation, termination and the confirmation workflow are out of scope).
 > Sources: `docs/Sepration Workflow (1).docx`, `docs/Staff Exit Clearance Form.docx`, HR notes (Memo 9/10/26),
 > reference task-tracker screenshot (2026-10-10).
-> Artifact: **sep-workflow** — https://claude.ai/artifact/4HWTJrHZYeU2xobzMRaUyF
+> Artifact: **sep-workflow** — https://claude.ai/artifact/4HWTJrHZYeU2xobzMRaUyF (tab **Workflow Guide**: who does
+> what after HR approval; tasks stay WAITING until the clearance start date = LWD − lead days, assignees resolve on opening)
 > Rules: `docs/follow.md` — DB-driven (no hardcoded data), clean readable code, `sp_*` for complex calc, modules under
 > `src/modules/<domain>/components/` + `index.ts`, page root `space-y-6` with unboxed header and one action bar,
 > **SideDrawer (50%) for forms — never modals**, permissions `<module>.<action>` + menu rows, plan before code,
@@ -217,7 +218,11 @@ task; the stage name is the title). Extend the `entityType` union in `frontend/s
   components SeparationCaseHeader, ClearanceTaskDrawer, SeparationTrackerDrawer; Step 6 ✅: SeparationTaskDrawer (router used by
   /task), FnfProcessDrawer, FnfPaymentDrawer, FnfSummary, ClearancesReadOnly, TaskDocuments, TaskDrawerParts, useSeparationTask;
   to come: ExitInterviewDrawer.
-  Routes: `src/app/(dashboard)/masters/separation-config/page.tsx` ✅, `src/app/(dashboard)/portal/separation/page.tsx` ✅, `src/app/(dashboard)/employees/separation-tracker/page.tsx` ✅.
+  Step 8 ✅ (report, own folder per follow.md #19): `src/modules/reports/separation/` — SeparationReportView, components
+  SeparationReportKpiCards, SeparationReportFilterCard, SeparationReportTable, ExitInsightsPanel; backend
+  `SeparationReportController` (`api/reports/separation`), `ISeparationReportService` / `SeparationReportService`,
+  `DTOs/Reports/SeparationReportDtos.cs`, `sp_ReportSeparationExitStats`.
+  Routes: `src/app/(dashboard)/reports/separation/page.tsx` ✅, `src/app/(dashboard)/masters/separation-config/page.tsx` ✅, `src/app/(dashboard)/portal/separation/page.tsx` ✅, `src/app/(dashboard)/employees/separation-tracker/page.tsx` ✅.
 
 ---
 
@@ -233,14 +238,15 @@ task; the stage name is the title). Extend the `entityType` union in `frontend/s
 | 5 | **Clearance tracker:** task generation, trigger date job, parallel / sequential, checklist + handover / KT upload, retrigger. | ✅ Done 2026-10-10 |
 | 6 | **HR final clearance + F&F Process + F&F Paid.** | ✅ Done 2026-10-10 |
 | 7 | **Exit interview + Experience cum Relieving Letter + release.** Full cross-role E2E + report. | ✅ Done 2026-10-10 |
-| 8 | **Blob path clean-up** (all modules, `docs/blob_paths.md`) — after the user reviews the folder layout. | ⏳ Planned |
-| later | **Separation Reports** (HR-side list / reports) — D1. | |
+| 8 | **Separation Reports** (D1) — `/reports/separation`, `modules/reports/separation/` (follow.md #19): filters, cards, paged list, exit-interview insights, XLSX export. | ✅ Done 2026-10-10 |
+| 9 | **Blob path clean-up** (all modules, `docs/blob_paths.md`) — after the user reviews the folder layout. | ⏳ Planned |
+| 10 | **/letters clean-up** (`docs/letters_fixes.md`, L1–L8). | ⏳ Planned |
 
 ## 9. Decisions (answered 2026-10-10)
 
 | # | Answer |
 |---|---|
-| D1 | HR-side screen → **"Separation Reports"**, later. |
+| D1 | HR-side screen → **Reports → Separation** (`/reports/separation`), Step 8 ✅. HR roles only; statistics cover every case matching the filters. |
 | D2 | Letter via the letters module, named **"Experience cum Relieving Letter"**, issued by System. |
 | D3 | Exit interview is filled by the **employee**; HR can retrigger it. |
 | D4 | Active stages as in the reference tracker (L1, Admin, Finance, Audit & Legal, IT, HR final, F&F, exit, letter). SACCO off. |
@@ -513,22 +519,89 @@ task; the stage name is the title). Extend the `entityType` union in `frontend/s
 > - After release the employee cannot sign in, so the portal download is for superadmin / developer; the employee gets
 >   the letter by e-mail.
 
-## 11. Next-step prompt (Separation Reports / blob paths) — paste into a new chat
+### Step 8 — Reports › Separation (2026-10-10)
+- User: report at **`/reports/separation`**, UI in its own folder **`modules/reports/separation/`** — now a rule for every
+  report (follow.md #19); permissions `reporting.separation.view` / `.export` (Reports naming); **HR roles only**;
+  statistics cover **every case matching the filters**.
+- API `api/reports/separation` (`SeparationReportController` → `SeparationReportService`): `GET filters` (workspace
+  companies; departments, locations, stages that occur on cases), `GET` (paged list + summary, page size ≤ 100),
+  `GET exit-stats` (`separation.exit.view`, else 403), `GET export` (XLSX, `reporting.separation.export`, audit row
+  `SeparationReport` / `EXPORT`). One filter query feeds list, summary, statistics and export. F&F fields are blanked
+  without `separation.fnf.view`. Stage names come from `separation_stages`.
+- `sp_ReportSeparationExitStats @SeparationIds` — OPENJSON over `reasonsJson` / `ratingsJson` of COMPLETED interviews;
+  current question text and order from `separation_exit_questions` (answer copy as fallback).
+- Screen `SeparationReportView`: unboxed header + Refresh / Export XLSX, filter card, 6 cards, tabs Resignations /
+  Exit Interview Insights (only with exit.view), paged table; a row opens `SeparationTrackerDrawer` (now exported
+  from `modules/separation`) for `separation.tracker.view` holders.
+- DB (`docs/db_changes.sql`, Step 8 block): menu `menu-rep-separation`, 2 permissions, 6 grants, the procedure.
+- Checks: `dotnet build` 0 errors, `tsc --noEmit` 0 errors, tests 322/322; script ×2 on a clone; clone E2E **36/36**
+  (6 seeded cases in two companies — HR, line manager with a clone-only view grant, employee, developer). Applied to dev
+  (employees 3,876; no cases). Pre-change backup `/var/opt/mssql/data/s8pre.bak`.
+
+> **Code correction and static values** (follow.md #10)
+> - The XLSX status column uses a status → label map in `SeparationReportService` (same text as the screen's
+>   `SEPARATION_STATUS`); the F&F status shows the stored code (PENDING / SUBMITTED / PAID).
+> - With a group workspace, stage names come from the first company that defines the stage code.
+> - The Separation Tracker list still caps at 500 cases (no paging); the report has paging.
+
+### Fix — General "days before LWD" applies to approved cases not yet in clearance (2026-10-10)
+- User report: lead days set to 30 after SEP-2026-0001 was HR-approved; the tracker still showed the start date 24 Oct
+  (fixed at approval with 7). Decision: saving General **re-dates HR-approved cases with no task triggered yet** (case +
+  WAITING tasks) and opens what is now due with notices (`RunForCasesAsync`); cases already in clearance unchanged.
+  Count shown on save and written to the audit row. policies.md §94.
+
+### Fix — separation document upload returned 415 in the browser (2026-10-10)
+- `separationTasksApi.upload` (L1 handover, F&F statement, payment evidence) sent the FormData with the `apiClient`
+  default `Content-Type: application/json` → ASP.NET 415. Now sends `multipart/form-data`, like the other modules'
+  uploads. The clone E2E had called the API directly, so it did not catch this.
+
+### Fix — portal Status timeline ignored the tracker tasks (2026-10-10)
+- `/portal/separation` timeline was positional on `currentStage`, which stays on the first post-approval stage after HR
+  approval, so it showed "L1 Manager clearance — In progress" with everything later waiting even when all tasks were done.
+  Now (`SeparationService.TimelineState`): once tasks exist (open or RELEASED case) a stage with a task is DONE when
+  COMPLETED / SKIPPED, CURRENT ("In progress", several in parallel) when PENDING, else WAITING; approval stages before the
+  first task are DONE. Before HR approval the positional rule is kept.
+
+## 11. Next-step prompts — paste each into a new chat, in this order
+
+Order (user, 2026-10-10): **Step 8 Separation Reports** ✅ (`/reports/separation`, follow.md #19) →
+**Step 9 blob-path clean-up** → **Step 10 /letters clean-up**.
+
+### 11.1 Step 9 — blob-path clean-up
 
 ```
-Read docs/follow.md and follow every rule (design reference: /portal/attendance page + its New Request drawer).
-Read docs/sepration.md (§1–§4, §8 step table, §9 decisions, §10 step log incl. Step 7) and memories
-"separation-module-plan" and "employee-lifecycle-rules". Steps 1–7 of the Separation (resignation-only) module are done:
-the flow runs from resignation to release (exit interview, Experience cum Relieving Letter, archive, release).
+Read docs/follow.md and follow every rule. Read docs/blob_paths.md (inventory, proposed target, migration method),
+docs/sepration.md §10 Step 7 (final/ archive folder) and memory "separation-module-plan" + "keep-usage-lean".
+Task: clean up every blob path in all modules.
+1) Re-check the inventory in docs/blob_paths.md §1 against the code (every writer of a storage key: BlobKeyBuilder,
+   DocumentsService, Recruitment/Onboarding, EmployeeService certificates, AuthorizedSignatories, LeaveProofStorage,
+   ClockEvidence, SeparationTaskService, SeparationReleaseService, LettersService) and list anything missing.
+2) Present the final folder layout + key format per file type + which DB column holds each key, flag static values
+   (follow.md #10), and wait for my approval. Folder roots come from appsettings, not code.
+3) After approval: one BlobKeyBuilder for all writers; a migration (copy → update key → verify the file opens → delete
+   old only after verify) run on a throwaway DB clone + copied blob folder first; DB changes in docs/db_changes.sql
+   (idempotent); a dry-run report (files found / moved / missing).
+4) Verify: tsc --noEmit + dotnet build clean, tests pass, downloads work per role (employee, line manager, HR) for each
+   file type; then apply to dev with a backup.
+Docs after: docs/blob_paths.md (mark done), docs/policies.md (next section), docs/sepration.md step table, the
+sep-workflow artifact (Build steps + manual test), memory. End with the prompt for Step 10 (docs/sepration.md §11.2).
+```
 
-Pick one (ask me which first):
-A) Separation Reports (D1): HR list / reports of resignations — status, LWD, recovery days, F&F, exit-interview
-   statistics (reason counts, average ratings; separation.exit.view), with paging and export (separation.reports.view /
-   .export, menu under Employee Management or Reports). Present the plan first (follow.md #9).
-B) Blob path clean-up: follow docs/blob_paths.md (inventory → target layout → migration on a clone → verify → apply).
-   Present the plan with the final folder layout for my approval first.
+### 11.2 Step 10 — /letters clean-up
 
-Every DB change in docs/db_changes.sql (idempotent; INFORMATION_SCHEMA checks). Test writes only on a throwaway DB clone
-(method in memory). After the step: tsc --noEmit and dotnet build clean, role E2E, update docs/sepration.md,
-docs/policies.md (next section after §92), the sep-workflow artifact (Build steps + manual test), memory.
+```
+Read docs/follow.md and follow every rule. Read docs/letters_fixes.md (L1–L8), docs/blob_paths.md (final layout from
+Step 9) and docs/sepration.md §10 Step 7 (System letter path: LettersService.IssueSystemLetterAsync, Pdf/LetterPdf.cs —
+already clean, reuse it). Memories "separation-module-plan", "no-static-values-use-masters", "keep-usage-lean".
+Task: clean up the manual /letters module.
+1) Verify each item L1–L8 in code and data (counts from the dev DB, read-only), add anything else found.
+2) Present the plan (follow.md #9) with a "Code correction and static values" section and wait for my approval.
+   Ask me about L8 (template wording) before touching HR text.
+3) After approval: no sample fallbacks (refuse with the missing field), per-company letter numbering, every issued letter
+   stored as a PDF under the Step 9 layout and attached to employee documents with its key, a real permission-checked
+   download, "Employment Letters" document type seeded, seed signatory / letterhead not looking real + readiness banner.
+   Back-fill empty employee_documents.storageKey rows on a clone first. DB changes in docs/db_changes.sql (idempotent).
+4) Verify: tsc --noEmit + dotnet build clean, tests pass, clone E2E as HR (issue, preview, download, refusals) and
+   employee (own letters only), Experience cum Relieving Letter regression (release path).
+Docs after: docs/letters_fixes.md (tick items), docs/policies.md (next section), memory.
 ```
