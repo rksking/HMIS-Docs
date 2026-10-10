@@ -1,6 +1,6 @@
 # Separation (Resignation) Module — Design & Implementation Plan
 
-> Status: **revision 9 (2026-10-10). Steps 1–6 ✅ done (6 = HR final clearance, F&F Process, F&F Paid). Next: Step 7 — exit interview + Experience cum Relieving Letter + release (prompt in §11).**
+> Status: **revision 10 (2026-10-10). Steps 1–7 ✅ done — the resignation flow is complete from resignation to release (7 = exit interview, Experience cum Relieving Letter, release). Next: Separation Reports (D1) and the blob-path clean-up (`docs/blob_paths.md`); prompt in §11.**
 > Scope: **RESIGNATION only** (probation confirmation, termination and the confirmation workflow are out of scope).
 > Sources: `docs/Sepration Workflow (1).docx`, `docs/Staff Exit Clearance Form.docx`, HR notes (Memo 9/10/26),
 > reference task-tracker screenshot (2026-10-10).
@@ -232,7 +232,8 @@ task; the stage name is the title). Extend the `entityType` union in `frontend/s
 | 4 | **Approvals + notifications:** line manager + LWD request + HR on `/task`; email + bell per stage mapping; `IsApproverAsync` for mapped employees; login block; `employmentStatus = NOTICE`. | ✅ Done 2026-10-10 |
 | 5 | **Clearance tracker:** task generation, trigger date job, parallel / sequential, checklist + handover / KT upload, retrigger. | ✅ Done 2026-10-10 |
 | 6 | **HR final clearance + F&F Process + F&F Paid.** | ✅ Done 2026-10-10 |
-| 7 | **Exit interview + Experience cum Relieving Letter + release.** Full cross-role E2E + report. | ⏳ Next |
+| 7 | **Exit interview + Experience cum Relieving Letter + release.** Full cross-role E2E + report. | ✅ Done 2026-10-10 |
+| 8 | **Blob path clean-up** (all modules, `docs/blob_paths.md`) — after the user reviews the folder layout. | ⏳ Planned |
 | later | **Separation Reports** (HR-side list / reports) — D1. | |
 
 ## 9. Decisions (answered 2026-10-10)
@@ -436,37 +437,98 @@ task; the stage name is the title). Extend the `entityType` union in `frontend/s
 > - Leave balances shown are for the year of the LWD from `leave_balances.remaining` (reference only, no encashment maths).
 > - The HR final seed line "Exit interview held" is usually "No" with a remark until Step 7 adds the exit interview.
 
-## 11. Next-step prompt (Step 7) — paste into a new chat
+### Step 7 — Exit interview, Experience cum Relieving Letter, release (2026-10-10)
+- User answers (all recommendations approved): exit interview opens with the clearances, fillable until sign-in is blocked,
+  **HR may skip it with a reason**; answers only for **`separation.exit.view`** (HR roles), not the line manager; **new
+  combined template**, primary authorised signatory; **text-only PDF** (no logo / signature image) accepted; **IsActive = 0
+  at release** (later payroll runs skip them; F&F carries the final dues); **login deactivated** unless the user has another
+  active employee record (god roles never); **leave balances frozen, pending leave cancelled**, release notice lists direct
+  reports and stage mappings (nothing reassigned automatically); **letter e-mailed to the personal e-mail** (exit interview,
+  else profile); form seeded as the docx, two extra questions switched off. Blob: letter + copies of every document of the
+  employee under **`separation/{employeeNumber_employeeName}/final/`** (user request), path clean-up as a later task.
+- **Exit interview** — `SeparationExitRules.cs`: the form = company rows of `separation_exit_questions` (REASON / RATING /
+  TEXT / SCALE; `sp_SeedSeparationExitQuestions`, also run when Separation Config opens for a company without rows).
+  Submit: employee only, task PENDING, case HR_APPROVED, before `accessBlockedAt`; ≥ 1 reason or other reason; every active
+  rating on the scale; text optional (2,000 chars); mobile or e-mail (valid). Answers (with the question text) in
+  `separation_exit_interviews` (`reasonsJson`, `otherReason`, `ratingsJson`, `textAnswersJson`, `contactJson`), task
+  COMPLETED, audit `EXIT_INTERVIEW_COMPLETED`. HR **Skip** (`POST api/separation-tasks/{id}/skip`, retrigger permission,
+  reason required) → SKIPPED, audit `EXIT_INTERVIEW_SKIPPED`; **Retrigger** also re-opens a SKIPPED exit interview.
+  `ActionableGroups` + EXIT: notice `SEPARATION_STAGE_ASSIGNED` with link `/portal/separation`; /task item flagged
+  **`IsSelfTask`** (new on `PendingApprovalDto`; `ApprovalVisibilityRules` rule 0 — only the employee sees / acts; the
+  "never your own submission" rule hid it); `UserAccessResolver.IsApproverAsync` counts an employee with an open exit
+  interview (so they get `task.view`; permissions are in the token, refreshed at sign-in / refresh). API
+  `GET/POST api/separation/{id}/exit-interview` (employee; HR with exit.view read-only).
+- **Letter + release** — `SeparationReleaseService.TryReleaseAsync` (after every task action, exit submit / skip, the
+  hourly job, and **Retry letter** = Retrigger on the System task). Ready when F&F Paid COMPLETED, exit COMPLETED / SKIPPED,
+  **company date > LWD** (added after the E2E showed a case paid during the notice being released before its LWD), letter
+  not issued. `LettersService.IssueSystemLetterAsync` (template by code `TPL_EXPERIENCE_RELIEVING`, primary signatory else
+  template default, refused when missing — no sample fallbacks; same reference returns the same letter) with extra fields
+  `last_working_date`, `relieving_date`, `resignation_date`, `notice_period_days`; reference `<case ref>-ECRL`.
+  `Pdf/LetterPdf.cs` (SimplePdf: letterhead text, ref + date, subject, wrapped body, footer note) → blob
+  `{SeparationDocuments:FinalStorageFolder}/{empNo_name}/final/experience-cum-relieving-letter-<ref>.pdf`
+  (`BlobKeyBuilder.SeparationFinalFolder` / `SafeFileName`), `separation_attachments` EXPERIENCE_LETTER,
+  `LettersService.AttachStoredLetterAsync` → `employee_documents` row **with the storage key** (PDF). Archive: candidate
+  (`candidates.convertedEmployeeId`), onboarding (`candidate_onboarding_profiles.convertedEmployeeId`), employee documents
+  and separation attachments copied (download + upload) to `final/documents/<source>/NNN_<file>`, one `separation_attachments`
+  ARCHIVE row each, unreadable files logged and skipped. Release (one save): case RELEASED + `releasedAt`, letter task
+  COMPLETED by "System", `employmentStatus` SEPARATED, `status` RESIGNED, `employees.isActive` 0, `users.isActive` 0 (no other
+  active record, not god mode), pending leave cancelled via `LeaveService.CancelLeaveRequestAsync`, audit `CASE_RELEASED`
+  (details: letter, archive count, leave, login, direct reports, mappings). Failure → letter task PENDING with
+  "Not issued yet: <reason>". Notices: `NotifySeparationReleasedAsync` — `SEPARATION_LETTER_ISSUED` bell to the employee +
+  e-mail to the personal address **with the PDF attached** (`SendOnceAsync` takes attachments now); `SEPARATION_RELEASED` to
+  the HR final clearance people (their stage switches). Download `GET api/separation/{id}/letter` (employee, tracker
+  viewers in the workspace, superadmin / developer).
+- Frontend: `ExitInterviewDrawer` (portal case card button + /task via `SeparationTaskDrawer`, `separationId` from the
+  payload), `ExitInterviewAnswersView`, case card letter download; tracker drawer: release / archive banner, exit answers
+  (exit.view), **Skip** with reason, **Retry letter**; Separation Config tab **Exit Interview** (`SeparationExitFormTab`,
+  `ExitQuestionDrawer`, section labels in `constants.ts`).
+- DB (`docs/db_changes.sql`, Step 7 block): table + seed proc + seeding (450 rows, 15 companies), exit interview columns,
+  template for the 5 companies with letter templates (others get it from `LettersSeedData` on first /letters use),
+  `sp_SeedSeparationNotifications` re-created with the two new events (30 settings), permission + 3 grants.
+- Checks: `dotnet build` 0 errors, `tsc --noEmit` 0 errors, tests 322/322; script ×2 on a clone; **clone E2E 90/90** (report
+  below). Applied to dev (employees 3,876; no cases). Pre-change backup `/var/opt/mssql/data/s7pre.bak`.
+- **E2E report** (clone `HRMSCore_SepTest`, API :5299, local blob folder, Ethereal SMTP): config (30 seeded lines, company
+  name in the statement, add / edit / reorder, 6th scale point refused, employee 403). **Case A** (william.gitau): resign →
+  line manager (trevor) → HR (hr) → exit interview on the employee's /task + bell → L1 (handover upload), Admin + IT
+  (peter), Finance (christine), Audit (douglas) → HR final → F&F Process → exit interview (line manager 403, HR read-only,
+  HR submit 403, 4 validation refusals, submit) → letter waits → F&F Paid (ranmeet) → **not released before LWD**, Retry
+  refused with the reason → LWD over → released: status / employment / employee + user inactive, letter in /letters with
+  PDF in employee documents, merged text, PDF on disk, downloads (developer, HR; line manager 403), 4 documents archived
+  (missing one skipped), tracker, e-mails (letter to the exit e-mail with PDF, release to HR), bells, audit, pending leave
+  cancelled, sign-in refused. **Case B** (milton.olenyo): F&F Paid with exit open → not released; Finance skip 403, skip
+  without reason refused; signatory inactive → skip → letter PENDING "no active authorised signatory", Retry refused;
+  retrigger skipped exit → employee submits (mobile only); signatory back → Retry letter → released, same release checks.
+
+> **Code correction and static values** (follow.md #10)
+> - `LettersService.RenderLetterAsync` / `IssueLetterAsync` (manual /letters) still fall back to sample values ("Sarah
+>   Omolo", "Director of Human Capital", "Consultant Physician", "Internal Medicine", "EMP-00101", "HR Operations Manager")
+>   and a random `LTR-HRMS-yyyy-####` reference that can repeat; `PdfUrl` points at a non-existent endpoint. The System
+>   path does not use them — left for a /letters clean-up.
+> - The seeded default signatory "Sarah Omolo" and letterhead contacts (hr@hospital.co.ke) are seed data, not real
+>   company data — HR should set real signatories / letterheads in /letters before go-live.
+> - "Employment Letters" document type is still created in code when missing (`AttachToEmployeeDossierInternal`).
+> - Contact fields of the exit interview (P.O. Box, postal code, town, mobile, e-mail) are a fixed structure, not a master
+>   (the letter e-mail depends on the e-mail field).
+> - The section labels of the Exit Interview tab (`EXIT_QUESTION_TYPES`) are display text for the type codes.
+> - After release the employee cannot sign in, so the portal download is for superadmin / developer; the employee gets
+>   the letter by e-mail.
+
+## 11. Next-step prompt (Separation Reports / blob paths) — paste into a new chat
 
 ```
 Read docs/follow.md and follow every rule (design reference: /portal/attendance page + its New Request drawer).
-Read docs/sepration.md (§1–§4, §8 step table, §9 decisions, §10 step log incl. Steps 4–6) and memories
-"separation-module-plan" and "employee-lifecycle-rules". Steps 1–6 of the Separation (resignation-only) module are done.
+Read docs/sepration.md (§1–§4, §8 step table, §9 decisions, §10 step log incl. Step 7) and memories
+"separation-module-plan" and "employee-lifecycle-rules". Steps 1–7 of the Separation (resignation-only) module are done:
+the flow runs from resignation to release (exit interview, Experience cum Relieving Letter, archive, release).
 
-Do Step 7 — exit interview + Experience cum Relieving Letter + release:
-1. EXIT_INTERVIEW (already PENDING with the clearances, assignee = the employee, not notified yet): notify the employee
-   (bell + e-mail per stage switches, NotifySeparationTasksAsync — add GroupExit to ActionableGroups), show it in
-   /portal/separation (case card: "Exit interview" button → ExitInterviewDrawer, SideDrawer 50%) and on /task for the
-   employee. Form from docs/Staff Exit Clearance Form.docx: reasons for leaving (multi-select), ten 1–5 ratings, most
-   satisfying / most challenging, contact details → separation_exit_interviews (ReasonsJson, RatingsJson, …),
-   COMPLETED. The employee may fill it until access is blocked (accessBlockedAt); HR can retrigger it (D3).
-   Reason / rating lists must come from the DB (masters or seeded rows), not hard-coded.
-2. EXPERIENCE_LETTER (SYSTEM): when FNF_PAID and EXIT_INTERVIEW are COMPLETED, issue the "Experience cum Relieving
-   Letter" through the letters module (D2) — find how LettersService generates / stores letters and the template
-   placeholders; seed the template per company if missing (db_changes.sql); store it in the employee's documents;
-   task COMPLETED by System; employee sees / downloads it in /portal/separation; tracker shows it.
-3. Release: after the letter, case RELEASED (releasedAt), employment_details.employmentStatus = SEPARATED,
-   employees Status RESIGNED / IsActive = 0 per §1.3 (check what the Employees list and payroll expect; ask the user
-   before deactivating if anything depends on IsActive), audit + bell to the employee and HR.
-4. Full cross-role E2E of the whole flow (employee → line manager → HR → clearances → HR final → F&F → exit →
-   letter → release) on a clone, with a short report.
+Pick one (ask me which first):
+A) Separation Reports (D1): HR list / reports of resignations — status, LWD, recovery days, F&F, exit-interview
+   statistics (reason counts, average ratings; separation.exit.view), with paging and export (separation.reports.view /
+   .export, menu under Employee Management or Reports). Present the plan first (follow.md #9).
+B) Blob path clean-up: follow docs/blob_paths.md (inventory → target layout → migration on a clone → verify → apply).
+   Present the plan with the final folder layout for my approval first.
 
-Before coding, present the Step 7 plan for approval (follow.md #9) with open points, e.g.: exit interview before or
-after LWD / optional; who sees exit-interview answers (new permission?); letter wording / signatory; what release
-does to the user login, leave balances and pending items; whether HR can skip the exit interview.
-
-Every DB change goes in docs/db_changes.sql (idempotent; check INFORMATION_SCHEMA). Test writes only on a throwaway
-DB clone (method in memory); map test people on the clone only. After the step: tsc --noEmit and dotnet build clean,
-role E2E (employee, line manager, HR, finance, developer), update docs/sepration.md (step table, step log, status),
-docs/policies.md (next section after §91), the sep-workflow artifact (Build steps + manual test), memory.
+Every DB change in docs/db_changes.sql (idempotent; INFORMATION_SCHEMA checks). Test writes only on a throwaway DB clone
+(method in memory). After the step: tsc --noEmit and dotnet build clean, role E2E, update docs/sepration.md,
+docs/policies.md (next section after §92), the sep-workflow artifact (Build steps + manual test), memory.
 ```
