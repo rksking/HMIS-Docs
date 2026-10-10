@@ -1,6 +1,6 @@
 # Separation (Resignation) Module — Design & Implementation Plan
 
-> Status: **revision 7 (2026-10-10). Steps 1–4 ✅ done (4 = approvals + notifications on /task, login block). Next: Step 5 — clearance tracker (prompt in §11).**
+> Status: **revision 8 (2026-10-10). Steps 1–5 ✅ done (5 = clearance tracker: tasks, /task clearance drawer, Employee Management → Separation Tracker). Next: Step 6 — HR final clearance + F&F (prompt in §11).**
 > Scope: **RESIGNATION only** (probation confirmation, termination and the confirmation workflow are out of scope).
 > Sources: `docs/Sepration Workflow (1).docx`, `docs/Staff Exit Clearance Form.docx`, HR notes (Memo 9/10/26),
 > reference task-tracker screenshot (2026-10-10).
@@ -206,15 +206,17 @@ task; the stage name is the title). Extend the `entityType` union in `frontend/s
 - **Backend:** `Domain/Entities/SeparationEntities.cs` ✅, `Application/DTOs/Separation/SeparationConfigDtos.cs` ✅,
   `Application/Common/Interfaces/ISeparationConfigService.cs` ✅, `Infrastructure/Services/SeparationConfigService.cs` ✅,
   `Api/Controllers/SeparationConfigController.cs` ✅ (`api/separation-config`); `ISeparationService` /
-  `SeparationService` / `SeparationController` (`api/separation`) / `SeparationDtos.cs` ✅ (Step 3); to come:
-  `NotificationService.Separation.cs`, approval / task services.
+  `SeparationService` / `SeparationController` (`api/separation`) / `SeparationDtos.cs` ✅ (Step 3); Step 4 ✅ `NotificationService.Separation.cs`,
+  `SeparationApprovalRules.cs`; Step 5 ✅ `SeparationTaskRules.cs`, `ISeparationTaskService` / `SeparationTaskService`,
+  `SeparationTasksController` (`api/separation-tasks`), `SeparationTaskBackgroundService`, `SeparationTaskDtos.cs`.
 - **Frontend:** `src/modules/separation/` — `masters/SeparationConfigView.tsx` ✅, `components/` ✅
   (SeparationStagesTab, StageMappingDrawer, SeparationGeneralTab, SeparationChecklistTab, ChecklistItemDrawer),
   `api.ts`, `types.ts`, `constants.ts`, `index.ts` ✅; Step 3 ✅: `portal/PortalSeparationView.tsx`, `components/`
   SeparationRequestDrawer (tabs Resign / Change LWD / Withdraw → InitiateResignationForm, LwdRequestForm,
-  WithdrawResignationForm), SeparationCaseCard, EmploymentFactsCard, SeparationTimeline; to come: TaskActionDrawer,
-  HandoverDrawer, FnfDrawer, FnfPaymentDrawer, ExitInterviewDrawer, SeparationTracker.
-  Routes: `src/app/(dashboard)/masters/separation-config/page.tsx` ✅, `src/app/(dashboard)/portal/separation/page.tsx` ✅.
+  WithdrawResignationForm), SeparationCaseCard, EmploymentFactsCard, SeparationTimeline; Step 5 ✅: `tracker/SeparationTrackerView.tsx`,
+  components SeparationCaseHeader, ClearanceTaskDrawer (used by /task), SeparationTrackerDrawer; to come: FnfDrawer,
+  FnfPaymentDrawer, ExitInterviewDrawer.
+  Routes: `src/app/(dashboard)/masters/separation-config/page.tsx` ✅, `src/app/(dashboard)/portal/separation/page.tsx` ✅, `src/app/(dashboard)/employees/separation-tracker/page.tsx` ✅.
 
 ---
 
@@ -227,8 +229,8 @@ task; the stage name is the title). Extend the `entityType` union in `frontend/s
 | 3a | **Employee lifecycle in days:** probation days everywhere (months removed), `employmentStatus`, probation end / separation / LWD dates, probation notice days on the Employment Type master. | ✅ Done 2026-10-10 |
 | 3b | **ESS Initiate resignation:** portal page, Separation Request drawer (Resign / Change LWD / Withdraw), LWD calc (confirmed / probation), LWD by agreement, recovery days, withdraw. | ✅ Done 2026-10-10 |
 | 4 | **Approvals + notifications:** line manager + LWD request + HR on `/task`; email + bell per stage mapping; `IsApproverAsync` for mapped employees; login block; `employmentStatus = NOTICE`. | ✅ Done 2026-10-10 |
-| 5 | **Clearance tracker:** task generation, trigger date job, parallel / sequential, checklist + handover / KT upload, retrigger. | ⏳ Next |
-| 6 | **HR final clearance + F&F Process + F&F Paid.** | |
+| 5 | **Clearance tracker:** task generation, trigger date job, parallel / sequential, checklist + handover / KT upload, retrigger. | ✅ Done 2026-10-10 |
+| 6 | **HR final clearance + F&F Process + F&F Paid.** | ⏳ Next |
 | 7 | **Exit interview + Experience cum Relieving Letter + release.** Full cross-role E2E + report. | |
 | later | **Separation Reports** (HR-side list / reports) — D1. | |
 
@@ -352,41 +354,83 @@ task; the stage name is the title). Extend the `entityType` union in `frontend/s
 >   pattern, separation lines added the same way. Stage label "Change of last working day" for LWD items is in code.
 > - `ApprovalsService.ResolveApproverContextAsync` still decides "HR" from role codes (`HR_MANAGER`, `COMPANY_HR`, …) for
 >   other modules; separation does not use it (mapped employees only).
-> - `/task` History tab does not list separation decisions yet (the case trail does) — follow-up.
+> - ~~`/task` History tab does not list separation decisions yet~~ — done 2026-10-10: `GetApprovalHistoryAsync` block 2d
+>   lists line manager / HR / LWD decisions and overrides (module badge "Separation", action OVERRIDDEN styled).
 
-## 11. Next-step prompt (Step 5) — paste into a new chat
+### Step 5 — Clearance tracker (2026-10-10)
+- User answers: a **"No" blocks submit** (resolve first, then Yes / N/A); tracker is a **new HR page** —
+  **Employee Management → Separation Tracker** (`/employees/separation-tracker`, `separation.tracker.view`: role_hr,
+  company_hr, group_hr); **Retrigger** = `separation.task.retrigger` holders on PENDING (re-notify) or COMPLETED (re-open)
+  tasks; the exit-interview task opens with the clearances but is **not notified until Step 7**.
+- `SeparationTaskRules.cs`: on HR approval one WAITING task per active stage after `HR_APPROVAL`
+  (`configuredTriggerDate` = case trigger date). HR approval is **refused** while an active post-approval stage resolves
+  to nobody (message names the stages). `AdvanceAsync` (company date via `CompanyClock`): PARALLEL opens every clearance,
+  SEQUENTIAL the next one when none is open; exit interview opens with them; **HR final** opens when every clearance is
+  COMPLETED (F&F, letter stay WAITING). Runs after HR approval / LWD decisions, after each completion, and from
+  `SeparationTaskBackgroundService` (appsettings `SeparationTasks`: AutoRunEnabled, RunIntervalMinutes = 60).
+  An LWD change moves `configuredTriggerDate` of WAITING tasks. Only active stages get tasks, so SEQUENTIAL skips
+  switched-off stages.
+- Complete: every active checklist line YES / NO / NA (+ remark), any NO → refused; handover / KT notes required where
+  the stage `requiresHandover` (L1); answers replace earlier ones in `separation_clearance_responses`; audit
+  `TASK_COMPLETED`. Retrigger: stamps `retriggeredDate`, re-resolves assignees, clears completed-by, puts a PENDING HR
+  final back to WAITING; audit `TASK_RETRIGGERED`.
+- Handover documents: `api/separation-tasks/{id}/attachments` → blob `employee/<companyId>/separation/<separationId>/HANDOVER/`
+  (appsettings `SeparationDocuments`: MaxBytes 10 MB, AllowedTypes PDF / JPEG / PNG / DOCX / XLSX, StorageFolder
+  `employee`; signature check reused from `LeaveProofStorage.Validate`). Download: tracker viewers in the workspace and
+  the task's assignees.
+- /task: entity `SEPARATION_TASK` (Separation tab, badge "Clearance"), for the people the stage resolves to;
+  **Open Clearance** opens `ClearanceTaskDrawer` (case header, checklist Yes / No / N/A + remark, handover notes +
+  uploads, remarks); clearance items are excluded from batch approve. Notices: `NotifySeparationTasksAsync` —
+  `SEPARATION_STAGE_ASSIGNED` per open clearance task (stage bell / e-mail switches), key `case|TASK|task|retriggerTicks`.
+- Tracker page `SeparationTrackerView` (status / company / search, task counts) → `SeparationTrackerDrawer` (header:
+  location, joining, notice, resignation, LWD, recovery days, clearance start; per task: status, configured / actual /
+  retriggered dates, assigned to, owner, completed by, answers, notes, documents, Retrigger).
+- **Fix to Step 4:** `ApproverEmployeeIdsAsync` now uses each stage's configured "handled by" (`DIRECT_MANAGER` →
+  reporting manager, else mapped) instead of hard-wiring the reporting manager to `LINE_MANAGER_APPROVAL` only — L1
+  clearance never resolved to the manager before. `IsApproverAsync` also counts the line manager of an HR_APPROVED case.
+- DB (`docs/db_changes.sql`, Step 5 block): menu `menu-emp-separation-tracker`, permission `separation.tracker.view`,
+  3 grants. No schema change.
+- Checks: `dotnet build` 0 errors, `tsc --noEmit` 0 errors, tests 322/322; script ×2 on a clone; clone E2E **50/50**
+  (parallel case: refusal while unmapped, 10 tasks, /task routing incl. ess-role mapped people, No / missing answer
+  refused, handover upload + bad type + blob path, download rights, HR final opening, tracker, retrigger + re-notify,
+  audit, bells) + **12/12** (sequential case: future trigger, LWD change moves dates, scheduled job opens L1 + exit only,
+  completion opens the next clearance). 9 `SEPARATION_STAGE_ASSIGNED` e-mails SENT. Applied to dev (employees 3,876;
+  no cases; nobody mapped). Pre-change backup `/var/opt/mssql/data/s5.bak`.
+
+> **Code correction and static values** (follow.md #10)
+> - The drawer hint "PDF, Word, Excel or image" mirrors `SeparationDocuments:AllowedTypes`; the server enforces the list.
+> - `/task` review (`GetTaskReviewAsync`) only serves items still pending, so the tracker has its own read endpoint.
+> - DOCX / XLSX uploads are not signature-checked (only PDF / JPEG / PNG are, as for leave proof).
+> - Tracker list is capped at 500 cases per query (no paging yet) — Separation Reports (later) will add paging.
+
+## 11. Next-step prompt (Step 6) — paste into a new chat
 
 ```
 Read docs/follow.md and follow every rule (design reference: /portal/attendance page + its New Request drawer).
-Read docs/sepration.md (§1.2, §2, §3.2–3.3, §4, §8 step table, §10 step log incl. Step 4) and memories
-"separation-module-plan" and "employee-lifecycle-rules". Steps 1–4 of the Separation (resignation-only) module are done.
+Read docs/sepration.md (§1.2, §2, §3.2–3.3, §4, §8 step table, §10 step log incl. Steps 4–5) and memories
+"separation-module-plan" and "employee-lifecycle-rules". Steps 1–5 of the Separation (resignation-only) module are done.
 
-Do Step 5 — the clearance tracker:
-1. Task generation: when a case is HR_APPROVED, create separation_tasks for every active post-approval stage
-   (L1_CLEARANCE, ADMIN/FINANCE/AUDIT_LEGAL/IT clearance, HR_FINAL_CLEARANCE, FNF_PROCESS, FNF_PAID, EXIT_INTERVIEW,
-   EXPERIENCE_LETTER) with configuredTriggerDate = ClearanceTriggerDate (WAITING). A daily job (and HR approval after
-   that date) fires them: PENDING + actualTriggerDate; PARALLEL = all clearance stages at once, SEQUENTIAL = one by
-   sequenceOrder. Exit interview opens with the clearance tasks. HR final opens when all clearances are COMPLETED.
-   An LWD change before firing moves configuredTriggerDate.
-2. /task entity type SEPARATION_TASK (title = stage name) for the people the stage resolves to
-   (SeparationApprovalRules.ApproverEmployeeIdsAsync — DIRECT_MANAGER / MAPPED); the action drawer shows the stage's
-   checklist (Yes / No / N/A + remark → separation_clearance_responses); L1_CLEARANCE also needs handover / KT notes
-   and document upload (separation_attachments, blob employee/<companyId>/separation/<separationId>/<category>/).
-3. Tracker screen (reference screenshot, §2): per case — task, status, configured / actual / retriggered dates,
-   assigned to, owner, completed by, documents; Retrigger (separation.task.retrigger) re-opens and re-notifies.
-   Header: location, joining date, notice, resignation date, LWD, recovery days. Decide with the user where it lives
-   (e.g. a Separation tab in the /portal/separation case for the employee, and HR's view from /task).
-4. Notifications: SEPARATION_STAGE_ASSIGNED per task (bell + email per stage switches) via NotifySeparationAsync or
-   a task-level sibling; key per task + retrigger count.
-Stop at clearance — F&F and HR final decisions are Step 6, exit interview + letter Step 7.
+Do Step 6 — HR final clearance + F&F Process + F&F Paid:
+1. HR_FINAL_CLEARANCE (opens PENDING when every clearance is COMPLETED — SeparationTaskRules.AdvanceAsync): show it on
+   /task for the mapped HR (SeparationTaskRules.PendingAsync currently lists CLEARANCE only), notify it
+   (NotifySeparationTasksAsync, same key rule), drawer = checklist (Staff ID, uniform, notice served, years of service,
+   leave balance, leave encashment, certificate, exit interview held) + comment + submit. Show the clearance answers,
+   handover notes and documents of the case read-only in that drawer.
+2. FNF_PROCESS (opens after HR final): mapped HR enters the F&F amount (company currency from masters, never hard-coded),
+   recovery days carried from the case, uploads the F&F statement (separation_attachments FNF_STATEMENT,
+   separation_fnf row) and submits.
+3. FNF_PAID (opens after F&F Process): mapped Finance enters paid amount, payment reference, payment date, evidence upload
+   (PAYMENT_EVIDENCE); completes the task; separation_fnf.status = PAID.
+4. Tracker drawer: F&F block (amounts, statement, evidence). Retrigger works for these tasks too.
+Stop before the exit interview and letter (Step 7).
 
-Before coding, present the Step 5 plan for approval (follow.md #9) with open points, e.g.: can a clearance task be
-marked "No" (blocked) and what happens then; who may retrigger; do SEQUENTIAL tasks skip inactive stages; does the
-daily job use the company time zone (CompanyClock).
+Before coding, present the Step 6 plan for approval (follow.md #9) with open points, e.g.: does HR final allow "No"
+(as clearances: blocks); may F&F amount be negative (recovery); is a leave-encashment / notice-recovery calculation
+expected now or entered manually; who may see F&F amounts on the tracker (separation.tracker.view or a new permission).
 
 Every DB change goes in docs/db_changes.sql (idempotent; check INFORMATION_SCHEMA). Test writes only on a throwaway
 DB clone (method in memory); map test people on the clone only. After the step: tsc --noEmit and dotnet build clean,
-role E2E (employee, line manager, mapped clearance people, HR), update docs/sepration.md (step table, step log, next
-prompt), docs/policies.md (next section after §89), the sep-workflow artifact (Build steps + manual test), memory, and
-write the Step 6 prompt.
+role E2E (mapped HR, finance, line manager, employee), update docs/sepration.md (step table, step log, next prompt),
+docs/policies.md (next section after §90), the sep-workflow artifact (Build steps + manual test), memory, and write the
+Step 7 prompt.
 ```
