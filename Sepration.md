@@ -1,6 +1,6 @@
 # Separation (Resignation) Module — Design & Implementation Plan
 
-> Status: **revision 11 (2026-10-10). Steps 1–8 ✅ done — the resignation flow runs from resignation to release, and Reports → Separation (Step 8) is live. Next: Step 9 blob-path clean-up, then Step 10 /letters clean-up; prompts in §11.**
+> Status: **revision 12 (2026-10-10). Steps 1–8 and 10 ✅ done — resignation flow to release, Reports → Separation, and the /letters clean-up (docs/letters_fixes.md, policies §95). Next: Step 9 blob-path clean-up (prompt §11.1).**
 > Scope: **RESIGNATION only** (probation confirmation, termination and the confirmation workflow are out of scope).
 > Sources: `docs/Sepration Workflow (1).docx`, `docs/Staff Exit Clearance Form.docx`, HR notes (Memo 9/10/26),
 > reference task-tracker screenshot (2026-10-10).
