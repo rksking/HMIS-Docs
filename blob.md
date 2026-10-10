@@ -1,61 +1,99 @@
-# Blob path clean-up — task (planned, not started)
+# Blob paths and file security — ✅ done 2026-10-10 (Separation Step 9)
 
-> Raised by the user on 2026-10-10 with Separation Step 7: "after some time we will look at all the folders and correct
-> the paths with the improved way". This file is the task: what exists today, a proposed target, and how to migrate
-> without losing a file. **Nothing here is applied yet.** The user approves the target layout first (follow.md #9).
+> Raised with Separation Step 7 ("correct the paths with the improved way"). Layout approved by the user 2026-10-10:
+> company first, `final/` holds only the Experience cum Relieving Letter, hired candidates' files move to the person's
+> `recruitment/` folder, **nothing is ever deleted by the system** (old files stay; the user removes them by hand).
+> Security: "100% secure" — every file needs a login and an ownership check; line managers get no team documents;
+> signatures for HR / superadmin / developer only; every download audited, switchable (Access Control → Audit
+> Configuration, developer only). policies.md §96.
 
-## 1. What exists today (inventory from the code, 2026-10-10)
+## 1. Inventory (re-checked against the code)
 
-| # | Where it is written | Key layout today | DB column holding the key |
-|---|---|---|---|
-| 1 | `DocumentsService` (employee documents), `EmployeeDocumentBulkUploadService` | `employee-documents/{ownerId_ownerName}/{companyName_companyId}/{docType_docTypeId}/{name_ticks}.{ext}` (`BlobKeyBuilder.Build`) | `employee_documents.storageKey` |
-| 2 | `DocumentsService` (company repository) | `company-documents/{companyName_companyId}/{folderName_folderId}/{name_ticks}.{ext}` (`BuildCompanyDocument`) | repository documents table |
-| 3 | `EmployeeDocumentRepositoryService` (education) | `education/{ownerId_ownerName}/…` (`BlobKeyBuilder.Build`) | education rows |
-| 4 | `RecruitmentService`, `EmailService` (offer letters) | `candidate/{companyName}/{vacancyNumber}/{candidateId_name}/{category}/{name_ticks}.{ext}` (`BuildCandidateDocument`) | `candidate_documents.storageKey` |
-| 5 | `OnboardingService` | `candidate/…` (same builder) — older rows: `onboarding/{profileId_name}/…` | `candidate_onboarding_documents.storageKey`; some copied to `employee_documents` |
-| 6 | `DocumentsService` line ~229 (generated PDF) | `docs/{companyId}/{employeeId}/{guid}.pdf` | `employee_documents.storageKey` |
-| 7 | `EmployeeService` (certificates) | `certificates/{companyId}/{guid}{ext}` | certificate rows |
-| 8 | `AuthorizedSignatoriesService` | `signatures/{companyId}/{guid}_{name}{ext}` | `authorized_signatories.signatureImageUrl` |
-| 9 | `LeaveProofStorage` | `leave-proofs/…` (appsettings `LeaveProof:StorageFolder`) | `leave_requests.proofDocumentUrl` |
-| 10 | `ClockEvidenceService` | `clock-selfies/…` (appsettings `SelfieStorageFolder`) | attendance punch rows |
-| 11 | `SeparationTaskService` (handover, F&F statement, payment evidence) | `employee/{companyId}/separation/{separationId}/{CATEGORY}/{guid}{ext}` | `separation_attachments.fileUrl` |
-| 12 | `SeparationReleaseService` (Step 7) | `separation/{employeeNumber_employeeName}/final/…` + `final/documents/{source}/NNN_{file}` (copies) | `separation_attachments.fileUrl` (EXPERIENCE_LETTER / ARCHIVE), `employee_documents.storageKey` |
-| — | `LettersService` (manual letters) | **no file** — the letter body is served as HTML; 10 of 21 `employee_documents` rows had an empty `storageKey` | — |
+| # | Writer | Key before | DB column | Rows on dev |
+|---|---|---|---|---|
+| 1 | `DocumentsService` upload, `EmployeeDocumentBulkUploadService` | `employee-documents/{owner}/{company}/{type}/…` | `employee_documents.storageKey` | 12 (+10 empty) |
+| 2 | `DocumentsService` repository | `company-documents/…` **and `org/{companyId}/{folderId}/…` (340 seed rows — missing in the first inventory)** | `company_documents.storageKey` | 536 |
+| 3 | `EmployeeDocumentRepositoryService` education | `education/{owner}/…` | `education_details.certificateUrl` | 3 (name only) |
+| 4 | `EmployeeService.UploadCertificateAsync` (**missed**) | `certificates/{companyId}/{guid}` wrapped in `/api/employees/certificate-file?key=` | `education_details.certificateUrl` | 0 |
+| 5 | `RecruitmentService`, `EmailService` (offer letter **.html**) | `candidate/{company}/{vacancy}/{cand}/…` | `candidate_documents.storageKey` | 1 |
+| 6 | `OnboardingService` | `candidate/…`, older `onboarding/{cand}/…` (**the same file is also in `employee_documents`**) | `candidate_onboarding_documents.storageKey` | 9 |
+| 7 | `AuthorizedSignatoriesService` | `signatures/{companyId}/…` wrapped in `/api/authorized-signatories/signature-file?key=`; 5 rows are inline `data:image` | `authorized_signatories.signatureImageUrl` | 1 key |
+| 8 | Letters issue (**missed**) | copy of the signatory value | `issued_letters.signatorySignatureUrl` | 0 keys |
+| 9 | `LeaveProofStorage` | `leave-proofs/{co}/{yyyy-MM}/{guid}` | `leave_requests.proofDocumentUrl` | 0 |
+| 10 | `ClockEvidenceService` | `clock-selfies/{co}/{yyyy-MM}/{guid}` | `attendance_clock_events.selfieKey` | 0 |
+| 11 | `SeparationTaskService` | `employee/{co}/separation/{caseId}/{CAT}/{guid}` | `separation_attachments.fileUrl` | 2 |
+| 12 | `SeparationReleaseService` | `separation/{empNo_name}/final/…` + `final/documents/…` copies | `separation_attachments.fileUrl`, `employee_documents.storageKey` | 0 |
+| 13 | `LettersService` | `employee-documents/…` (Step 10) | `employee_documents.storageKey` | 1 |
+| — | `DocumentsService.UploadDocumentAsync` (**removed**) | `docs/{co}/{emp}/{guid}.pdf` — a row with **no file**, fake 1 MB size | — | 0 |
+| — | New-employee form documents (**fixed**) | never uploaded — rows with empty key and an invented document number | — | — |
+| — | Photos / logos | `data:` / URLs in the DB, not files | — | — |
 
-Problems: one person's files sit under several roots (candidate, onboarding, employee-documents, education, docs,
-certificates, employee/…/separation, separation/…/final); some keys use ids only (not browsable), some names only; the
-company sits at different depths; manual letters have no file at all.
-
-## 2. Proposed target (for the user to approve or change)
-
-One root per **person**, one per **company**, and everything about a person under their folder:
+## 2. Final layout (appsettings `BlobPaths` — every folder name; a blank one stops the API)
 
 ```
-people/{employeeNumber_employeeName}/                    (candidate before hire: people/candidate_{candidateId_name}/)
-    recruitment/{vacancyNumber}/{category}/…              (CV, offer, onboarding documents)
-    documents/{documentType}/…                            (employee documents, education, certificates)
-    letters/{yyyy}/{reference}.pdf                        (every issued letter as a PDF)
-    leave/{yyyy}/…                                        (leave proofs)
-    attendance/{yyyy-MM}/…                                (clock selfies)
-    separation/{caseReference}/{category}/…               (handover, F&F statement, payment evidence)
-    separation/{caseReference}/final/…                    (Experience cum Relieving Letter + archive copies)
-company/{companyCode_companyName}/
-    repository/{folder}/…    signatures/…    letterheads/…
+{companyCode}/people/{employeeNumber_name}/
+    recruitment/{vacancyNumber}/{category}/{file}_{ticks}.{ext}     hired person's CV, offer, onboarding documents
+    documents/{docTypeCode}/{file}_{ticks}.{ext}                    employee documents, bulk upload
+    documents/education/{file}_{ticks}.{ext}                        education certificates
+    letters/{yyyy}/{referenceNumber}.pdf                            every issued letter
+    leave/{yyyy}/{file}_{ticks}.{ext}                               leave proofs
+    attendance/{yyyy-MM}/{in|out}_{yyyyMMdd-HHmmss}_{ticks}.{ext}   clock selfies
+    separation/{caseReference}/{category}/{file}_{ticks}.{ext}      handover, F&F statement, payment evidence
+    separation/{caseReference}/final/{file}.pdf                     Experience cum Relieving Letter only
+{companyCode}/candidates/{vacancyNumber}/{candidateId_name}/{category}/…   not hired
+{companyCode}/company/repository/{folderName}/…    {companyCode}/company/signatures/{name}_{ticks}.{ext}
+{companyCode}/uploads/{userId}/…    certificate picked on the new-employee form; copied into the person's folder on save
 ```
 
-All keys built only through `BlobKeyBuilder` (one method per area), sanitised segments, the root folder names from
-appsettings (no literals in services).
+`BlobKeyBuilder` (Application/Common) is the only place keys are built; `IBlobPathResolver` gives the person folder /
+company code (refuses a company without a code). Every segment is lower-case `a-z 0-9 -`; `IsSafeKey` refuses `..`,
+`/…`, `\`.
 
-## 3. Migration method (when approved)
+## 3. Security (what makes a file reachable)
 
-1. **Inventory script** (read-only): every table / column that stores a key → CSV of `table, id, oldKey, newKey`; check each
-   old key exists in the container; report missing files.
-2. **Copy** each blob to its new key (server-side copy; add `CopyBlobAsync` to `IBlobStorageService` — Azure
-   `StartCopyFromUri`, local file copy). Originals untouched.
-3. **Update the DB keys** in one transaction per table (script in `docs/db_changes.sql`, re-runnable: only rows still on
-   the old key).
-4. **Verify** on a DB clone + a copy of the container: every row's key exists; downloads work through the API for each
-   area (role E2E).
-5. Apply to dev / production; keep the old blobs for an agreed period, then delete with a second script.
-6. Switch every writer to the new `BlobKeyBuilder` methods in the same release so no new file lands on an old path.
-7. Manual letters: render and store a PDF at issue time (reuse `Pdf/LetterPdf.cs`) so every letter has a file.
+- **No key from the browser, no key to the browser.** Downloads go by record id; DTOs carry an API URL. The only keys a
+  browser ever holds are its own fresh uploads (signature → must be under `{co}/company/signatures/`; certificate →
+  the person's `documents/education/` or the uploader's own `uploads/{userId}/`; onboarding → the candidate's folder).
+  Anything else is refused (400).
+- **Removed:** `GET api/authorized-signatories/signature-file?key=` and `GET api/employees/certificate-file?key=`
+  (both anonymous, any key; the second also read any server file and invented a "VERIFIED CREDENTIAL" PDF).
+- **`IPersonFileAccess`:** the employee themselves, holders of the permission whose accessible companies include the
+  employee's company, developer / superadmin. Used by employee documents (`documents/{id}/file`, the repository for
+  Me / Assignment / Employee), education, letters (`letters.view`). Line managers: none (ems lost `documents.view`).
+- **Signatures:** `GET api/authorized-signatories/{id}/signature` — `letters.signatories.view` + company in the caller's
+  workspace (HR, superadmin, developer); DTOs hide the image from everyone else.
+- Education endpoints now need `employees.view` (read) / `employees.edit` (write); certificate upload `employees.edit`
+  or `employees.create`.
+- Local storage refuses unsafe keys and any path outside its folder; the disk fallback in EmployeeService is gone.
+- Frontend: `openSecureFile` (lib/api.ts) and `SecureImage` (components/ui) fetch with the sign-in token and show a
+  `blob:` address that lives only in that tab.
+- Every download writes `audit_log` (`FileDownload` / `DOWNLOAD`, user, IP, browser) unless the developer switches
+  "File downloads" off on `/audit/config`.
+
+## 4. Migration (done on a clone; dev — run by the user)
+
+`POST api/admin/blob-paths/migrate?dryRun=true|false` (`admin.blob_paths.migrate`, Developer role). Per file: copy →
+byte-for-byte check → re-point every row that shares the file (priority: separation 1, hired candidate 2, employee
+files 3, company 4, candidate 5) → `blob_path_migrations` row (old key, new key, status). A missing file is reported
+and its rows left alone (logged once). **Never deletes.** Re-runnable.
+
+Clone result (2026-10-10, `HRMSCore_BlobTest` + local copy of the 213 files in Azure): 564 rows, 553 files —
+**213 moved, 340 missing, 0 failed**; re-run: 0 moved, 221 already current. Missing = 336 seeded `org/` repository rows
+with no file, `BSc/Diploma/MSc_Certificate.pdf` (name-only seed rows), 1 signature never uploaded.
+Security E2E: 58/58 (+1 expectation corrected) — anonymous 401, owner 200, line manager / other employee / other-company
+HR 403, HR 200, forged keys 400, audit on/off.
+
+Manual clean-up later: `SELECT oldKey FROM blob_path_migrations WHERE status = 'MOVED'` lists the old files that can be
+deleted once you are satisfied.
+
+## 5. Open items
+
+- New hires: on conversion, candidate files stay under `candidates/` (the migration moved existing ones); move them to
+  `people/{emp}/recruitment/` in the onboarding conversion — follow-up.
+- Static values seen, not changed: `PRESET_SIGNATURES` (fake SVG signatures, letters SignatureMasterDrawer),
+  `EmailService` SMTP defaults (localhost, 587, "Talent Acquisition", localhost:4000), Letters signatory department
+  default "Executive Leadership", `CompanyLetterhead.LogoInitials = "AH"`, certificate upload limits in
+  `EmployeesController` (5 MB, pdf/jpg/png) and signature limits (2 MB, png/jpg) hardcoded.
+- Company HR has no `letters.view` (letter PDFs) — decide whether to grant.
+- Many modules write no audit rows yet (leave approvals, letters, documents upload, users / roles) — follow.md #20 asks
+  for them; each new audit type must be added to an area in `audit_settings.entityTypes` to be switchable.
