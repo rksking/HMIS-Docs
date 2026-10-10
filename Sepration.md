@@ -1,6 +1,6 @@
 # Separation (Resignation) Module — Design & Implementation Plan
 
-> Status: **revision 8 (2026-10-10). Steps 1–5 ✅ done (5 = clearance tracker: tasks, /task clearance drawer, Employee Management → Separation Tracker). Next: Step 6 — HR final clearance + F&F (prompt in §11).**
+> Status: **revision 9 (2026-10-10). Steps 1–6 ✅ done (6 = HR final clearance, F&F Process, F&F Paid). Next: Step 7 — exit interview + Experience cum Relieving Letter + release (prompt in §11).**
 > Scope: **RESIGNATION only** (probation confirmation, termination and the confirmation workflow are out of scope).
 > Sources: `docs/Sepration Workflow (1).docx`, `docs/Staff Exit Clearance Form.docx`, HR notes (Memo 9/10/26),
 > reference task-tracker screenshot (2026-10-10).
@@ -214,8 +214,9 @@ task; the stage name is the title). Extend the `entityType` union in `frontend/s
   `api.ts`, `types.ts`, `constants.ts`, `index.ts` ✅; Step 3 ✅: `portal/PortalSeparationView.tsx`, `components/`
   SeparationRequestDrawer (tabs Resign / Change LWD / Withdraw → InitiateResignationForm, LwdRequestForm,
   WithdrawResignationForm), SeparationCaseCard, EmploymentFactsCard, SeparationTimeline; Step 5 ✅: `tracker/SeparationTrackerView.tsx`,
-  components SeparationCaseHeader, ClearanceTaskDrawer (used by /task), SeparationTrackerDrawer; to come: FnfDrawer,
-  FnfPaymentDrawer, ExitInterviewDrawer.
+  components SeparationCaseHeader, ClearanceTaskDrawer, SeparationTrackerDrawer; Step 6 ✅: SeparationTaskDrawer (router used by
+  /task), FnfProcessDrawer, FnfPaymentDrawer, FnfSummary, ClearancesReadOnly, TaskDocuments, TaskDrawerParts, useSeparationTask;
+  to come: ExitInterviewDrawer.
   Routes: `src/app/(dashboard)/masters/separation-config/page.tsx` ✅, `src/app/(dashboard)/portal/separation/page.tsx` ✅, `src/app/(dashboard)/employees/separation-tracker/page.tsx` ✅.
 
 ---
@@ -230,8 +231,8 @@ task; the stage name is the title). Extend the `entityType` union in `frontend/s
 | 3b | **ESS Initiate resignation:** portal page, Separation Request drawer (Resign / Change LWD / Withdraw), LWD calc (confirmed / probation), LWD by agreement, recovery days, withdraw. | ✅ Done 2026-10-10 |
 | 4 | **Approvals + notifications:** line manager + LWD request + HR on `/task`; email + bell per stage mapping; `IsApproverAsync` for mapped employees; login block; `employmentStatus = NOTICE`. | ✅ Done 2026-10-10 |
 | 5 | **Clearance tracker:** task generation, trigger date job, parallel / sequential, checklist + handover / KT upload, retrigger. | ✅ Done 2026-10-10 |
-| 6 | **HR final clearance + F&F Process + F&F Paid.** | ⏳ Next |
-| 7 | **Exit interview + Experience cum Relieving Letter + release.** Full cross-role E2E + report. | |
+| 6 | **HR final clearance + F&F Process + F&F Paid.** | ✅ Done 2026-10-10 |
+| 7 | **Exit interview + Experience cum Relieving Letter + release.** Full cross-role E2E + report. | ⏳ Next |
 | later | **Separation Reports** (HR-side list / reports) — D1. | |
 
 ## 9. Decisions (answered 2026-10-10)
@@ -403,34 +404,69 @@ task; the stage name is the title). Extend the `entityType` union in `frontend/s
 > - DOCX / XLSX uploads are not signature-checked (only PDF / JPEG / PNG are, as for leave proof).
 > - Tracker list is capped at 500 cases per query (no paging yet) — Separation Reports (later) will add paging.
 
-## 11. Next-step prompt (Step 6) — paste into a new chat
+### Step 6 — HR final clearance + F&F (2026-10-10)
+- User answers: HR final **"No" allowed with a required remark** (shown on the tracker / F&F); **one net F&F amount, may be
+  negative** (employee owes the company); amount **entered manually** with reference facts (recovery days, notice, LWD,
+  leave balances of the LWD year) — auto-calculation later with payroll; F&F amounts / documents need the new
+  **`separation.fnf.view`** (role_hr, company_hr, group_hr, role_fin, finance; superadmin / developer always).
+- `SeparationTaskRules`: `AdvanceAsync` opens **F&F Process** when HR final is completed and **F&F Paid** when F&F Process
+  is completed. `CompleteAsync` serves clearance + HR groups (HR: No needs a remark). `SubmitFnfAsync` — amount required,
+  currency from `companies.currency` (refused if blank), latest `FNF_STATEMENT` upload required → `separation_fnf`
+  SUBMITTED, audit `FNF_SUBMITTED`. `PayFnfAsync` — fnf SUBMITTED, paid amount, reference, payment date ≤ company today,
+  latest `PAYMENT_EVIDENCE` upload required → PAID, audit `FNF_PAID`. Upload category from the task (L1 → HANDOVER,
+  F&F Process → FNF_STATEMENT, F&F Paid → PAYMENT_EVIDENCE). Retrigger puts later PENDING tasks back to WAITING
+  (clearance → HR final + F&F, HR final → F&F, F&F Process → F&F Paid) and steps the F&F row back (PAID → SUBMITTED,
+  SUBMITTED → PENDING). `PendingAsync` / `NotifySeparationTasksAsync` cover CLEARANCE, HR and FNF groups.
+- API `POST api/separation-tasks/{id}/fnf`, `POST {id}/fnf-payment`; task detail adds group, upload category, currency,
+  read-only clearances (HR final / F&F), F&F summary, leave balances. Tracker: `canViewFnf`, F&F block; without the
+  permission F&F amounts and documents are hidden and their download refused (assignees still open their own).
+- Frontend: `/task` "Open Task" → `SeparationTaskDrawer` picks the drawer by task code (from `detailsPayloadJson`):
+  checklist (clearance / HR final with read-only clearances), `FnfProcessDrawer`, `FnfPaymentDrawer`; tracker drawer F&F block.
+- DB (`docs/db_changes.sql`, Step 6 block): `separation_fnf.paymentDate`, `remarks`, `paymentRemarks`; permission
+  `separation.fnf.view` (menu Separation Tracker) + 5 grants.
+- Checks: `dotnet build` 0 errors, `tsc --noEmit` 0 errors, tests 322/322; script ×2 on a clone; clone E2E **44/44**
+  (mapped HR, Finance, line manager, employee, **developer** god role without an employee record: HR final routing +
+  bell, read-only clearances, No without / with remark, F&F refusals — no statement, blank currency, no amount — negative
+  amount, routing to Finance, payment refusals — no evidence, future date, blank reference — PAID row, audit, tracker
+  with / without `separation.fnf.view`, downloads, retrigger chain) + Step 5 regressions **50/50** and **12/12**.
+  30 `SEPARATION_STAGE_ASSIGNED` e-mails SENT on the clone. Applied to dev (employees 3,876). Backup `/var/opt/mssql/data/s6.bak`.
+
+> **Code correction and static values** (follow.md #10)
+> - Statement / evidence are the latest upload of the task; earlier uploads stay listed.
+> - Leave balances shown are for the year of the LWD from `leave_balances.remaining` (reference only, no encashment maths).
+> - The HR final seed line "Exit interview held" is usually "No" with a remark until Step 7 adds the exit interview.
+
+## 11. Next-step prompt (Step 7) — paste into a new chat
 
 ```
 Read docs/follow.md and follow every rule (design reference: /portal/attendance page + its New Request drawer).
-Read docs/sepration.md (§1.2, §2, §3.2–3.3, §4, §8 step table, §10 step log incl. Steps 4–5) and memories
-"separation-module-plan" and "employee-lifecycle-rules". Steps 1–5 of the Separation (resignation-only) module are done.
+Read docs/sepration.md (§1–§4, §8 step table, §9 decisions, §10 step log incl. Steps 4–6) and memories
+"separation-module-plan" and "employee-lifecycle-rules". Steps 1–6 of the Separation (resignation-only) module are done.
 
-Do Step 6 — HR final clearance + F&F Process + F&F Paid:
-1. HR_FINAL_CLEARANCE (opens PENDING when every clearance is COMPLETED — SeparationTaskRules.AdvanceAsync): show it on
-   /task for the mapped HR (SeparationTaskRules.PendingAsync currently lists CLEARANCE only), notify it
-   (NotifySeparationTasksAsync, same key rule), drawer = checklist (Staff ID, uniform, notice served, years of service,
-   leave balance, leave encashment, certificate, exit interview held) + comment + submit. Show the clearance answers,
-   handover notes and documents of the case read-only in that drawer.
-2. FNF_PROCESS (opens after HR final): mapped HR enters the F&F amount (company currency from masters, never hard-coded),
-   recovery days carried from the case, uploads the F&F statement (separation_attachments FNF_STATEMENT,
-   separation_fnf row) and submits.
-3. FNF_PAID (opens after F&F Process): mapped Finance enters paid amount, payment reference, payment date, evidence upload
-   (PAYMENT_EVIDENCE); completes the task; separation_fnf.status = PAID.
-4. Tracker drawer: F&F block (amounts, statement, evidence). Retrigger works for these tasks too.
-Stop before the exit interview and letter (Step 7).
+Do Step 7 — exit interview + Experience cum Relieving Letter + release:
+1. EXIT_INTERVIEW (already PENDING with the clearances, assignee = the employee, not notified yet): notify the employee
+   (bell + e-mail per stage switches, NotifySeparationTasksAsync — add GroupExit to ActionableGroups), show it in
+   /portal/separation (case card: "Exit interview" button → ExitInterviewDrawer, SideDrawer 50%) and on /task for the
+   employee. Form from docs/Staff Exit Clearance Form.docx: reasons for leaving (multi-select), ten 1–5 ratings, most
+   satisfying / most challenging, contact details → separation_exit_interviews (ReasonsJson, RatingsJson, …),
+   COMPLETED. The employee may fill it until access is blocked (accessBlockedAt); HR can retrigger it (D3).
+   Reason / rating lists must come from the DB (masters or seeded rows), not hard-coded.
+2. EXPERIENCE_LETTER (SYSTEM): when FNF_PAID and EXIT_INTERVIEW are COMPLETED, issue the "Experience cum Relieving
+   Letter" through the letters module (D2) — find how LettersService generates / stores letters and the template
+   placeholders; seed the template per company if missing (db_changes.sql); store it in the employee's documents;
+   task COMPLETED by System; employee sees / downloads it in /portal/separation; tracker shows it.
+3. Release: after the letter, case RELEASED (releasedAt), employment_details.employmentStatus = SEPARATED,
+   employees Status RESIGNED / IsActive = 0 per §1.3 (check what the Employees list and payroll expect; ask the user
+   before deactivating if anything depends on IsActive), audit + bell to the employee and HR.
+4. Full cross-role E2E of the whole flow (employee → line manager → HR → clearances → HR final → F&F → exit →
+   letter → release) on a clone, with a short report.
 
-Before coding, present the Step 6 plan for approval (follow.md #9) with open points, e.g.: does HR final allow "No"
-(as clearances: blocks); may F&F amount be negative (recovery); is a leave-encashment / notice-recovery calculation
-expected now or entered manually; who may see F&F amounts on the tracker (separation.tracker.view or a new permission).
+Before coding, present the Step 7 plan for approval (follow.md #9) with open points, e.g.: exit interview before or
+after LWD / optional; who sees exit-interview answers (new permission?); letter wording / signatory; what release
+does to the user login, leave balances and pending items; whether HR can skip the exit interview.
 
 Every DB change goes in docs/db_changes.sql (idempotent; check INFORMATION_SCHEMA). Test writes only on a throwaway
 DB clone (method in memory); map test people on the clone only. After the step: tsc --noEmit and dotnet build clean,
-role E2E (mapped HR, finance, line manager, employee), update docs/sepration.md (step table, step log, next prompt),
-docs/policies.md (next section after §90), the sep-workflow artifact (Build steps + manual test), memory, and write the
-Step 7 prompt.
+role E2E (employee, line manager, HR, finance, developer), update docs/sepration.md (step table, step log, status),
+docs/policies.md (next section after §91), the sep-workflow artifact (Build steps + manual test), memory.
 ```
