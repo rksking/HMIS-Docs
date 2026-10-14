@@ -2,7 +2,7 @@
 
 Branch: `add-new-emp-page` · Started 2026-10-14 · Follows `docs/follow.md` and `docs/ui.md`. Management artifact: https://claude.ai/artifact/FR3XhYGHenVQ49uk1rH9V4 (source `docs/artifacts/add-employee-page.html`; progress, how to operate, manual test checklist).
 
-**Status: Steps 0–5 done 2026-10-14. Next: Step 6 (Step 3 UI, part A: Salary & Banking, statutory numbers, Employee Code).** DB + backend base, photo upload, the 4-step page and its steps 1 (Personal & Contact) and 2 (Employment & Organisation) are built; nothing is saved from the page yet (Step 8).
+**Status: Steps 0–6 done 2026-10-14. Next: Step 7 (Step 3 UI, part B: Education, Compliance Documents, Emergency & Next of Kin, User Account, Notes).** DB + backend base, photo upload, the 4-step page, its steps 1 (Personal & Contact) and 2 (Employment & Organisation) and the first half of step 3 (Salary & Banking, Statutory, Employee Code) are built; nothing is saved from the page yet (Step 8).
 
 ## 1. Goal
 
@@ -109,7 +109,7 @@ Every step: `tsc --noEmit` + `dotnet build` clean, DB changes in `docs/db_change
 | 3 | **Page shell:** route `/employees/add`, menu visible, `modules/employees/add-employee/` (`AddEmployeeView.tsx`, `components/`, `useAddEmployeeForm.ts`), shared `components/ui/Stepper.tsx` (from `UserWizardStepper`, which then uses it), shared `SearchSelect.tsx`, footer (Cancel · Back · Next Step / Complete), `docs/ui.md` §12 Stepper | ✅ Done 2026-10-14 (§9) |
 | 4 | **Step 1 UI:** Basic (photo), Identification, Contact (dial codes), Address (same-as tick box); masters; field and banner validation | ✅ Done 2026-10-14 (§10) |
 | 5 | **Step 2 UI:** Employment Details (auto confirmation date), Organisation & Position (autocomplete, company → locations multi-select chips with primary), Reporting Manager L1 → Direct HR → HRBP autocomplete, Shift autocomplete + hours, Schedule dropdown, Effective From | ✅ Done 2026-10-14 (§11) |
-| 6 | **Step 3 UI, part A:** Salary & Banking (optional, CTC tile), statutory numbers (KRA PIN / NSSF / SHIF), Employee Code card | ☐ |
+| 6 | **Step 3 UI, part A:** Salary & Banking (optional, CTC tile), statutory numbers (KRA PIN / NSSF / SHIF), Employee Code card | ✅ Done 2026-10-14 (§12) |
 | 7 | **Step 3 UI, part B:** Educational Qualifications, Compliance Documents, Emergency & Next of Kin, User Account Creation (toggle, role, password mode, activation, force-change tick box), Notes | ☐ |
 | 8 | **Step 4:** Review cards + Edit links + confirmation; submit, upload documents, show credentials panel; backend saves locations, contacts, login options; audit | ☐ |
 | 9 | **Save as Draft**: save / resume / delete | ☐ |
@@ -125,6 +125,10 @@ Every step: `tsc --noEmit` + `dotnet build` clean, DB changes in `docs/db_change
 - `CreateEmployeeModal.tsx`: 0 `standered-*` classes and 109 `rounded-lg/xl/2xl`. It does not follow `docs/ui.md`. The new page is built to `ui.md`; the drawer is renamed and kept for comparison (D8).
 - `CreateEmployeeModal.tsx:717 / 889 / 901`: step guards mix `< 8`, `=== 8` and `< 9`. Not carried over.
 - Mock-ups show `+254`, `KES`, `Kenya (KE)`, `NSSF` as values. On the page all of these come from the company's country, currency and statutory masters, never from code.
+- `EmployeeService.Create.cs:216 / 218`: a blank account type / payment method is saved as `"SALARY"` / `"BANK_TRANSFER"` (also the entity and DTO defaults). The page sends nothing when they are left empty, so these fallbacks still apply — decide in Step 8 whether a blank stays blank or uses a lookup flagged as default.
+- `useCurrencies` (`modules/currency-master/useCurrencies.ts`) starts from `DEFAULT_FALLBACK_CURRENCIES` (static list). The new page does not use it; it calls `currenciesApi.getCurrencies` directly.
+- `employeesApi.checkEmployeeCodeAvailability` returns `false` on any error, so a network failure shows "already used".
+- `EmployeeAssignmentForm.tsx:874–890`: payment methods are a hardcoded array; they can now read the `PAYMENT_METHOD` lookup.
 - `EmployeeAccountService.AddLoginAsync`: role, `ForcePasswordChange` and `IsActive` are fixed in code. They become request options (G22) with the current values as defaults.
 
 ## 7. Step 1 result (2026-10-14)
@@ -179,3 +183,12 @@ Every step: `tsc --noEmit` + `dotnet build` clean, DB changes in `docs/db_change
 - **Removed**: the empty "Role" card from Step 3's shell — there is no job-role field; the login's user role is Step 7 (G22).
 - **Checks**: `tsc --noEmit` clean, `add-employee/` lint clean. Browser checks 5.1–5.17 in the artifact; not run here.
 - **Not done here**: `PersonnelAutocomplete` keeps its own (purple, `rounded-lg`) look — restyling it to `docs/ui.md` touches the Assignment screens; reporting manager is not filtered by the chosen department; contract end date is not required per contract type (no master flag for it).
+
+## 12. Step 6 result (2026-10-14)
+
+- **SQL** (`docs/db_changes.sql`, "ADD EMPLOYEE PAGE — Step 6", applied locally, re-run safe): `CK_lv_category` widened; `lookup_values` + `PAYMENT_METHOD` (3) and `BANK_ACCOUNT_TYPE` (6) with the codes already stored in `bank_details`; `countries` + `socialSecurityLabel`, `healthInsuranceLabel` (Kenya: NSSF Number / SHIF Number). **Run it before deploying the API**: the countries list returns empty when a column is missing.
+- **Backend**: `Country.SocialSecurityLabel / HealthInsuranceLabel` (DTO, save, list); `LookupCategories.PaymentMethod / BankAccountType` (so Masters → Employee Lookups can manage them); `GET /api/employees/form-lookups` + `paymentMethods`, `bankAccountTypes`; `CheckPickListsAsync` refuses a payment method / account type not in the list.
+- **Frontend** `modules/employees/add-employee/`: `usePayMasters.ts` (active company currencies, active banks; `useBankBranches(bankId)`), `components/StepPayDocsAccess.tsx` (Salary & Banking with the CTC tile, Statutory & Compliance), `components/EmployeeCodeCard.tsx` (series preview + Refresh, manual code with a debounced availability check). `usePersonalMasters` returns `companyCurrency`; the view defaults the currency to it. Masters → Countries drawer has the two new label fields; Employee Lookups has the two new tabs.
+- **Form hook**: screen-only `codeMode`, `codeAvailable`; `payErrors` for step 3 (basic salary ≥ 0, salary → currency, bank ↔ account number, manual code filled / available).
+- **Checks**: `dotnet build` clean, 515 tests pass, `tsc --noEmit` clean, `add-employee/` + `employee-lookups/` lint clean (`CountryDrawer.tsx` keeps its 2 old errors, lines 16 and 46). Browser checks 6.1–6.16 in the artifact; not run here.
+- **Not done here**: mobile money number / provider are not on the page (the drawer did not show them either); IBAN is not checked against the prefix; bank list is not filtered by the company's country (the drawer showed all banks too, with the country code as hint).
