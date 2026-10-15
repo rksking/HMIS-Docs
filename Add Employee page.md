@@ -2,7 +2,7 @@
 
 Branch: `add-new-emp-page` · Started 2026-10-14 · Follows `docs/follow.md` and `docs/ui.md`. Management artifact: https://claude.ai/artifact/FR3XhYGHenVQ49uk1rH9V4 (source `docs/artifacts/add-employee-page.html`; progress, how to operate, manual test checklist).
 
-**Status: Steps 0–10 done (Step 10 on 2026-10-15). Open: the end-to-end run as HR in the browser (artifact checks 10.1–10.20) and the side-by-side comparison before the old drawer is removed (D8). See §16–§18.** The 4-step page is complete, saves the employee, their login (with the step 3 options), contacts, locations and compliance documents, and keeps unfinished forms as personal drafts.
+**Status: Steps 0–10 done 2026-10-15, HR API run done on a throwaway copy (§19). Open: your answer on Q7 (HR cannot upload compliance documents), then Steps 11–14 (§20). Old drawer stays until you say (Q1). See §16–§20.** The 4-step page is complete, saves the employee, their login (with the step 3 options), contacts, locations and compliance documents, and keeps unfinished forms as personal drafts.
 
 ## 1. Goal
 
@@ -240,9 +240,9 @@ Grouped; none of these block using the page.
 
 | # | Follow-up | From |
 | :-- | :-- | :-- |
-| F1 | **Run browser checks 10.1–10.20 as HR on a throwaway DB copy** (and the not-run checks 4.x–9.x) | §10–§16 |
-| F2 | **Compare old drawer vs new page (D8)**, then remove `CreateEmployeeModal.tsx` and the "Register (old form)" button, and point `/employees` "+ Add Employee" to the page | §16 |
-| F3 | Blank account type / payment method still saved as `SALARY` / `BANK_TRANSFER`; empty notice period saved as 30 (request defaults) | §6, §14 |
+| F1 | ~~HR API run~~ **done** (§19). Browser-only checks (4.x–9.x, 10.1–10.4, 10.6–10.10, 10.19–10.20) still for you | §10–§16 |
+| F2 | Remove `CreateEmployeeModal.tsx` and the "Register (old form)" button **when you say so** (Q1). `/employees` already points to the page (Q2, done) | §16, §19 |
+| F3 | ~~Blank account type / payment method / notice period from code~~ **done** (§21): defaults now come from the masters | §6, §14 |
 | F4 | `users.activeFrom` uses UTC midnight, not the company time zone (Kenya: sign-in from 03:00 local) | §14 |
 | F5 | A login waiting for its active-from date still shows as **Active** on user screens | §14 |
 | F6 | Personal email must be unused by any login even when no login is created (bulk validator rule) | §14 |
@@ -259,6 +259,8 @@ Grouped; none of these block using the page.
 | F17 | `useCurrencies` starts from a static fallback list (`DEFAULT_FALLBACK_CURRENCIES`) | §6 |
 | F18 | `/employees/add` without `employees.create` shows an empty page (the gate has no message) | §16 |
 | F19 | Old lint errors left untouched: `CreateUserWizardView.tsx` (2), `CountryDrawer.tsx` (2), `employees/api.ts` / `types.ts` | §9, §12, §15 |
+| F20 | Edit Employee (`AssignmentService`) still defaults payment method `BANK_TRANSFER` / notice 30 in code for new rows | §21 |
+| F21 | Countries and Work Stations masters write no audit rows (incl. the new time-zone fields) | §23 |
 
 ## 18. Things you should know & decisions
 
@@ -287,4 +289,301 @@ Grouped; none of these block using the page.
 | Q4 | `activeFrom` time zone (F4) | Keep 00:00 UTC, or use the company time zone |
 | Q5 | Clean-up of staged photos / certificates and old drafts (F7, F8) | A daily clean-up job with an age limit, or leave as is |
 | Q6 | How Claude may sign in for API end-to-end tests | You give a test password for `hr` on the throwaway copy, or allow resetting it there, or keep testing in the browser only |
+
+### Your answers (2026-10-15)
+
+| # | Answer | What happens |
+| :-- | :-- | :-- |
+| Q1 | "Once I will tell" | Old drawer stays (Directory → Register (old form)) until you say remove it |
+| Q2 | New page | **Done 2026-10-15**: `/employees` "+ Add Employee" (and its empty-state buttons) open `/employees/add`; the drawer is no longer mounted there |
+| Q3 | OK | Use a default from the masters instead of code. **Done in Step 11** (§21). The 15 Oct reply did not correct this reading, so it was built as written |
+| Q4 | Time per country; employee time zone setting; travel changes attendance | **Step 12** (design first, needs your OK): time zone on country (and location override), employee time zone + dated travel periods, `activeFrom` and attendance worked out in that zone |
+| Q5 | Claude decides | **Decided: Step 13** daily clean-up job: staged photos / certificates older than **7 days** that no draft or employee uses are deleted; drafts not saved for **90 days** are deleted (audit `EMPLOYEE_DRAFT_DELETED`, reason "expired"). Both ages in appsettings, job switch on/off |
+| Q6 | Test logins given | Saved in `docs/follow.md` → "API / end-to-end test logins". Used Company HR `68032` for the run in §19 |
+
+## 19. HR end-to-end run through the API (2026-10-15)
+
+Throwaway copy `HRMSCore_StepTest` of `HRMSCore_Local2`, test API on :5299 (process checked: clone DB, biometric sync off), signed in as Company HR **68032** (`company_hr`, MAKL). Copy dropped afterwards; the shared DB was never written.
+
+| Check | Result |
+| :-- | :-- |
+| Masters for all 4 steps (lookups, ID types, org lists, shifts, schedules, managers / HR / HRBP, roles, document types, banks, photo rules, next code) | ✅ all load for HR |
+| Grantable roles | ✅ `company_hr, ess, role_md, role_emp` (no god-mode roles) |
+| 10.5 Draft save → update (same id) → list once; passwords, preview and files never stored | ✅ |
+| Photo staged; non-image content refused (400) | ✅ |
+| Role not grantable refused / weak manual password refused | ✅ "You may not give the chosen user role…" / "…at least 8 characters…" |
+| 10.11 Save A: username = work email, manual password, activate on joining date, forced change | ✅ 201; role Staff Employee, active from joining date |
+| Saved rows for A (DB): ID type / country / issue date, photo, 2 work stations (1 primary), emergency + next of kin, notes | ✅ |
+| 10.12 Draft deleted after save | ✅ |
+| 10.14 A signs in before joining date | ✅ refused: "Your account becomes active on 25 Oct 2026…" |
+| 10.15 Save B: username = code, auto password, active now → B signs in, must change password | ✅ |
+| 10.16 Save C with Create User Account off | ✅ no login |
+| 10.18 Audit | ✅ `EMPLOYEE_DRAFT_SAVED/_DELETED`, `EMPLOYEE_PHOTO_STAGED/_UPLOADED`, `LOGIN_CREATED` (no password in it), `LOGIN_NOT_CREATED`; **`EMPLOYEE_CREATED` was missing → fixed** (below) |
+| 10.8 Compliance document upload as HR | ❌ **403**: `POST /api/documents/upload-file` needs `documents.manage`; `company_hr` does not have it. Employee is still saved; the page lists the document as failed. **Q7** |
+| 10.13 Employee detail API returns ID details, extra work stations, contacts, notes | ❌ not returned (saved in DB, not in `EmployeeDetailDto`). Photo is returned. **Step 14** |
+
+**Fixed in this run**: `EmployeeService.Create.cs` → `AuditEmployeeCreated`: one `EMPLOYEE_CREATED` row (entity `Employee`, Employees switch) per new employee from the page, the old drawer and the bulk upload — code, name, joining date, employment / contract type, department, locations, job title, grade, cost centre, manager / HR / HRBP, shift, photo added, number of contacts and education rows. Salary and ID numbers are left out. `dotnet build` clean, 520 tests pass; checked on the copy (3 rows for 3 saves).
+
+**Good to know**: the save response returns the typed password to the HR user who typed it (`credentials.temporaryPassword`), so the success panel can show it behind its eye toggle; it is never emailed or audited.
+
+**Q7 (answered 15 Oct, done in Step 11, §21)**: HR could not upload compliance documents on Add Employee. Options: (a) give `company_hr` the `documents.manage` permission (DB script, also lets HR manage documents elsewhere); (b) let `POST /documents/upload-file` also accept `employees.create` for an employee created in the last 24 h by the same user (onboarding only); (c) hide the Compliance Documents card when the user lacks `documents.manage`.
+
+## 20. Next steps
+
+| Step | Work | Status |
+| :-- | :-- | :-- |
+| 11 | Q7 fix + Q3 defaults from masters (`lookup_values.isDefault`, notice from employment type) | ✅ 15 Oct (§21) |
+| 12 | Q4 time zones: plan first (country / location / employee time zone, travel periods, `activeFrom`, attendance) — written for your review before any code | ✅ plan 15 Oct (§22); answers 15 Oct (§22.11) |
+| 12a | Time-zone list, country default zone, work-station zone + country link, resolver, `activeFrom` at local midnight, Z7 script | ✅ 15 Oct (§23) |
+| 12b | Employee's own time zone on Add Employee step 2 / Edit Employee / bulk upload; `activeFrom` worked out again when joining date, work station or zone changes before the login is active | ✅ 15 Oct (§24) |
+| 12c | Travel periods: table, employee request + line-manager approval on /task, HR direct entry, audit | ☐ |
+| 12d | Attendance in the employee's zone: SQL functions, the two procedures, web clock-in, biometric conversion, geofence rule Z5 | ☐ |
+| 12e | Zone notes on ESS day drawer / register / summary + full browser checks | ☐ |
+| 13 | Q5 clean-up job (staged files 7 days, drafts 90 days, appsettings, audit) | ☐ |
+| 14 | Employee detail / My Profile return the new fields (ID details, extra work stations, contacts, notes) — F-item from §7 | ☐ |
+| — | Remove old drawer | ☐ when you say (Q1) |
+
+## 21. Step 11 result (2026-10-15)
+
+**Your answers**: Q7 (a) "yes, give" + (b) "ok" + (c) "manage". Q3: the §18 reading was not corrected, so it was built as written.
+
+| Part | What changed |
+| :-- | :-- |
+| Q7 (a) | `docs/db_changes.sql` block "Step 11" grants `documents.manage` to `company_hr` (re-runnable). HR must **sign in again** to get it. This also lets HR upload / verify documents on other screens |
+| Q7 (b) | `POST /api/documents/upload-file` now accepts `documents.manage` **or** `employees.create` for an employee **the same user added in the last 24 h** (checked against the `EMPLOYEE_CREATED` audit row). Any other employee → 403 "You do not have permission to upload documents for this employee." (`DocumentsController`, `DocumentsService.IsNewEmployeeAddedByAsync`) |
+| Q7 (c) | Read as "Claude manages it": the card is **not hidden**. With (b), everyone who can open Add Employee can upload for the employee they just saved, so hiding it would never apply |
+| Q3 lookups | New column `lookup_values.isDefault` (one per list). Masters → Employee Lookups: **Default** column + "Default" tick in the drawer (only for active values; ticking one un-ticks the old one; audited). `GET /employees/form-lookups` returns `isDefault`; Add Employee step 3 pre-selects it once, only on a blank field |
+| Q3 save | Blank payment method / account type → the marked default, else **blank** (was `BANK_TRANSFER` / `SALARY` in code). Blank notice → the employment type's default notice days, else 0 (was 30 in code). Same for the page, the old drawer and the bulk upload (`EmployeeService.Create.cs`) |
+| Q3 data | The SQL block marks `BANK_TRANSFER` and `SALARY` as defaults (only where a list has none), so blank fields save the same as before. Change them on the screen any time |
+
+**Checks**: `dotnet build` clean, **520/520** tests, `tsc` + eslint clean on the changed files. API run as Company HR **68032** on throwaway copy `HRMSCore_StepTest` (test API :5299, biometric sync off, files to local scratch storage, not Azure). SQL block run twice: 2nd run changed 0 rows. Copy dropped afterwards; the shared DB was not written.
+
+| Check | Result |
+| :-- | :-- |
+| HR token holds `documents.manage` after the SQL | ✅ |
+| `form-lookups` marks `BANK_TRANSFER` / `SALARY` as default | ✅ |
+| Save with blank notice / payment / account type (employment type Intern) | ✅ saved 14 days (Intern default) / `BANK_TRANSFER` / `SALARY` |
+| Save with typed values (45 / CHEQUE / SAVINGS) | ✅ kept as typed |
+| 10.8 Compliance document upload as HR | ✅ 200 (was 403 in §19) |
+| `documents.manage` taken off HR (copy only) → upload for the employee HR just saved | ✅ 200 (rule b) |
+| Same, for an old employee | ✅ 403 |
+| No default marked → blank payment method / account type saved | ✅ blank |
+
+**Good to know**
+- Rule (b) needs the `EMPLOYEE_CREATED` audit row. If the Employees switch on Audit Configuration is off, only `documents.manage` can upload.
+- The Edit Employee screen (`AssignmentService`) still falls back to `BANK_TRANSFER` / 30 days in code when a new bank / job row is made there. Not part of Add Employee; new follow-up **F20**.
+- Browser checks for you: artifact 11.1–11.5.
+
+**Run before deploying the API**: `docs/db_changes.sql` block "ADD EMPLOYEE PAGE — Step 11" (EF reads `isDefault` on every lookup query).
+
+
+## 22. Step 12 plan: time zones (Q4) — for your review, no code yet (2026-10-15)
+
+Your answer to Q4: "time per country; employee time zone setting; travel changes attendance". This section is the design only. Nothing is built until you answer Z1–Z9 below.
+
+### 22.1 What exists today
+
+| Area | Today |
+| :-- | :-- |
+| Company | `companies.timeZone` (IANA, e.g. `Africa/Nairobi`, default `UTC`) + `companies.timeZoneSqlId` (filled by the API). Set on Company Setup |
+| Country master | No time zone (`countries`: name, ISO, dial code, currency, labels) |
+| Work station | `locations` has `country` as **text** (not a link to `countries`), lat / long / geofence radius, no time zone |
+| Employee | No time zone. No travel record |
+| Attendance | All times = **company** local wall time: `CompanyClock` (.NET), `dbo.fn_CompanyLocalNow` (SQL) in `sp_ProcessDailyAttendance` / `sp_GetEmployeeMonthlyAttendance`. Biometric devices send their own local time; web clock-in is converted UTC → company time (policies.md §49) |
+| `users.activeFrom` | Joining date **00:00 UTC** (Kenya: sign-in from 03:00 local). "Is the joining date in the future?" also uses the UTC date |
+
+### 22.2 The rule: which time zone applies to an employee on a date
+
+One resolver answers "employee X on date D → time zone". First match wins:
+
+| Order | Source | When |
+| :-- | :-- | :-- |
+| 1 | **Travel period** (approved) | D falls inside `fromDate … toDate` |
+| 2 | **Employee time zone** | Set on the employee (remote worker, lives in another zone). Blank = go on |
+| 3 | **Primary work station** time zone | Set on the location. Blank = go on |
+| 4 | **Country** default time zone | Country of the work station (else the company's country). Blank = go on |
+| 5 | **Company** time zone | Always set (today's behaviour) |
+
+Because every new field starts blank, **nothing changes on the day this ships**: every employee still resolves to the company zone until someone fills a field. A country with several zones (USA, Australia) gets one default; each work station there sets its own.
+
+Time-zone names are IANA ids (`Africa/Nairobi`). The pick list comes from the server's own time-zone list (`TimeZoneInfo`), not from code. A small table `time_zones` (IANA id, SQL Server name, display name) is filled by the API at start-up, so SQL can use `AT TIME ZONE` for any zone (same idea as `companies.timeZoneSqlId`, one place instead of a column per table).
+
+### 22.3 Travel periods
+
+- A dated record: employee, **from date**, **to date**, destination **work station** (optional) and/or **time zone** (one of them required; a work station gives its zone), reason, status.
+- Dates are whole days. The new zone applies from 00:00 local on the from date to 24:00 local on the to date.
+- Two travel periods of the same employee may not overlap. A travel period may not start before the joining date or end after the last working day.
+- Changes after a day is processed: those days are **re-processed** (same as the regularisation re-process).
+- Audit: `EMPLOYEE_TRAVEL_CREATED / _UPDATED / _APPROVED / _REJECTED / _CANCELLED` (Employees switch).
+- Approval (if Z2 = request + approve) goes to **/task** like every other approval, through the approval role mapping.
+
+### 22.4 `users.activeFrom`
+
+- Saved as the **UTC moment** of joining date 00:00 in the employee's zone on that date (rules 2–5; travel is ignored before joining). Kenya, joining 25 Oct → `2026-10-24 21:00 UTC`; sign-in opens at 00:00 Nairobi.
+- "Joining date in the future?" (decides whether `activeFrom` is set at all) uses today **in that zone**, not the UTC date.
+- Sign-in refusal message and the welcome email show the **local date** ("active on 25 Oct 2026").
+- If HR later changes the joining date, work station or employee time zone before the login is active, `activeFrom` is worked out again (Edit Employee / bulk update).
+- Existing rows: one data script recomputes `activeFrom` for logins not yet active (see Z7).
+
+### 22.5 Attendance
+
+| Part | Change |
+| :-- | :-- |
+| Day and times | Attendance date and clock-in / out times = wall time **in the employee's zone for that date** (resolver). For everyone on the company zone this is today's result |
+| Web clock-in | `CompanyClock` → new `EmployeeClock` (resolver + UTC now). Company clock stays for company-level things (dashboard "today", reports) |
+| Biometric punches | Device sends its own local time. Device zone = its work station's zone (else company). If it differs from the employee's zone that day, the punch is converted device time → UTC → employee time. Same zone = untouched (today's case) |
+| SQL | New `dbo.fn_EmployeeTimeZoneOn(@EmployeeId, @Date)` (SQL Server zone name) and `dbo.fn_EmployeeLocalNow(@EmployeeId)`. The two procedures switch from `fn_CompanyLocalNow` to these. Live definitions are dumped first (the repo copies are stale). Set-based: zone per employee-day resolved once into a temp table, not a function call per row |
+| Shift times | A shift 09:00–18:00 means 09:00 **where the employee is that day** (Z3) |
+| Holidays | Taken from the employee's normal holiday calendar, not the destination's (Z4) |
+| Geofence | During travel, the clock-in location check uses the travel work station; travel with only a time zone → see Z5 |
+| Screens | ESS day drawer, register and summary show a small "Times in Asia/Dubai · Travel" note on days not in the employee's usual zone |
+
+### 22.6 Database changes (one block in `docs/db_changes.sql`, run before the API)
+
+| Change | Detail |
+| :-- | :-- |
+| `countries.defaultTimeZone` | nvarchar(64) null |
+| `locations.timeZone` | nvarchar(64) null |
+| `locations.countryId` | nullable FK to `countries`, filled once from the text `country` (match on name or ISO code); unmatched rows listed by the script for HR to fix. Text column kept for old screens |
+| `employees.timeZone` | nvarchar(64) null |
+| `time_zones` | new: `ianaId` (PK), `sqlServerId`, `displayName`; filled / refreshed by the API at start-up |
+| `employee_travel_periods` | new: id, companyId, employeeId, fromDate, toDate, locationId null, timeZone null, reason, status, approvedBy / At, created / updated audit columns. Index (employeeId, fromDate, toDate) |
+| SQL functions | `fn_EmployeeTimeZoneOn`, `fn_EmployeeLocalNow` |
+| Procedures | `sp_ProcessDailyAttendance`, `sp_GetEmployeeMonthlyAttendance` (only the "now / zone" lines change) |
+| Permissions / menus | `employees.travel.view`, `employees.travel.manage`; `portal.travel.apply` if Z2 includes employee requests; ESS menu "My Travel" under the portal menu |
+| Data | `users.activeFrom` recompute (Z7) |
+
+### 22.7 Screens (all follow `docs/ui.md`)
+
+| Screen | Change |
+| :-- | :-- |
+| Masters → Countries (`CountryDrawer`) | **Default time zone** search-select |
+| Masters → Locations (`LocationDrawer`) | **Country** from the master (select) + **Time zone** (blank = "Country default: Africa/Nairobi") |
+| Add Employee step 2 | Under Work Station: **Time zone** read-only line "Africa/Nairobi (from work station)" with **Change** → select (sets the employee's own zone); clear = inherit again |
+| Edit Employee | Same field; Travel tab (list + Add travel drawer) for HR |
+| ESS portal | "My Travel" list + New Request drawer (design like `/portal/attendance` New Request) if Z2 allows |
+| /task | Travel requests for approval (if Z2) |
+| Attendance (ESS, register, summary) | Zone note on travel / other-zone days |
+
+### 22.8 Risks
+
+| # | Risk | How it is handled |
+| :-- | :-- | :-- |
+| R1 | Location `country` is free text; some may not match the master | Script lists unmatched rows; resolver then skips rule 4 for them (falls to company) |
+| R2 | Device has no work station | Device treated as company zone (today's behaviour) |
+| R3 | Change-over day: a night shift that starts the day before travel and ends after the switch | Shift belongs to the day it **starts**; that day's zone is used for the whole shift |
+| R4 | Daylight saving (not in Kenya, but in other countries): 23 h / 25 h days | Hours worked from UTC difference of in/out, not wall-clock subtraction |
+| R5 | Company-wide "today" (dashboard present-today, reports) mixes zones | Stays company zone in this plan (Z6) |
+| R6 | Performance of per-employee zone lookups in the monthly / register procedures | Resolve once per employee-day range into a temp table |
+| R7 | Live procedures differ from the repo | Dump with `OBJECT_DEFINITION` before changing; change only the zone lines |
+| R8 | Server missing a zone (Linux vs Windows names) | `time_zones` built from the server's own list; unknown id → falls back to the next rule, logged |
+| R9 | Changing a past zone changes past attendance | Only travel periods re-process past days; employee / location / country zone changes apply from the next processed day (no re-process) unless HR re-processes |
+| R10 | Payroll attendance already locked for a month | Travel periods inside a locked payroll month are refused |
+
+### 22.9 Decisions you need to make
+
+| # | Question | Options (recommended first) |
+| :-- | :-- | :-- |
+| Z1 | Order of rules in 22.2 OK? | **Yes** / employee zone below work station |
+| Z2 | Who records travel? | **Employee requests, line manager approves on /task, HR can add directly (approved)** / HR only / employee only, no approval |
+| Z3 | Shift times during travel | **Local time where the employee is** / keep home-zone times (09:00 Nairobi shown as 10:00 in Dubai) |
+| Z4 | Public holidays during travel | **Home calendar** / destination country's calendar |
+| Z5 | Web clock-in during travel with no work station | **No location check those days** / refuse web clock-in / normal check against the home station |
+| Z6 | Dashboards and reports "today" | **Company zone (unchanged)** / each employee's zone |
+| Z7 | Logins already waiting with UTC `activeFrom` | **Recompute to local midnight** / leave them |
+| Z8 | Do leave, separation (resignation "today") and other "today" checks move to the employee zone too? | **Not now (later step)** / yes, in this work |
+| Z9 | Build order | **12a masters + resolver + `activeFrom` → 12b employee zone on Add / Edit → 12c travel periods + approvals → 12d attendance (procedures, web / biometric) → 12e screens notes + checks**, one fresh chat each / other |
+
+### 22.11 Your answers (2026-10-15)
+
+Your message kept the "…" placeholders; asked once, you chose **"All recommended"**.
+
+| # | Answer |
+| :-- | :-- |
+| Z1 | Order as in 22.2 (travel → employee → work station → country → company) |
+| Z2 | Employee requests travel, line manager approves on /task, HR can add directly (saved approved) |
+| Z3 | Shift times = local time where the employee is |
+| Z4 | Home holiday calendar during travel |
+| Z5 | Web clock-in during travel with no work station: no location check on those days |
+| Z6 | Dashboards and reports "today" stay on the company zone |
+| Z7 | Logins already waiting: recompute to local midnight |
+| Z8 | Leave / resignation / other "today" checks: not now (later step) |
+| Z9 | Build 12a → 12e, one chat each |
+
+### 22.10 Code correction and static values
+
+- `Company.TimeZone` default `"UTC"` and the `CompanyTimeZoneResolver` fallback `UTC` are code values; they stay as the last safety net (every company has a zone in the DB).
+- `EmployeeService.Create.cs` (line ~109) and `AuthService.cs` (line ~137) use `DateTime.UtcNow` for the joining-date / sign-in checks; `EmployeeAccountService.cs` (line ~183) prints the UTC date in the email. All three move to the resolver in 12a.
+- `locations.country` free text instead of a link to the country master (R1).
+
+## 23. Step 12a result (2026-10-15)
+
+| Part | What changed |
+| :-- | :-- |
+| Time-zone list | New table `time_zones` (IANA id, SQL Server name, display name, base offset). The API fills / refreshes it at start-up from the server's own zone list (`TimeZoneCatalogSync`, 419 zones locally). `GET /api/org/time-zones` (any signed-in user) feeds the pick lists. No zone list in code |
+| Countries | `countries.defaultTimeZone`. Masters → Countries drawer: **Default time zone** (search, clearable). A zone not on the list → 400 "Choose a time zone from the list …" |
+| Work stations | `locations.timeZone` + `locations.countryId` (FK to `countries`). Saving a work station links the country by name / ISO code; the text column stays. Work Stations drawer: **Time zone** (helper shows the country's zone) and an amber note when the saved country text is not in the master. Copy-to-companies copies both |
+| Employee | `employees.timeZone` column only (screens in 12b) |
+| Resolver | `EmployeeTimeZone` (`Infrastructure/Services/EmployeeTimeZone.cs`): employee → primary work station → its country (no linked country → company's country) → company → UTC. A zone unknown to the server is skipped. `LocalMidnightUtc`, `TodayIn`, `ForEmployeeAsync`, `ForUserAsync`, `ResolveAsync` |
+| `activeFrom` | Add Employee / old drawer / bulk upload with "activate on joining date": the UTC moment of 00:00 on the joining date in the new employee's zone (from the chosen primary work station). "Joining date in the future?" uses today in that zone. Credentials carry `activeFromDate` (local date); success panel, welcome email and the sign-in refusal show the local date. `LOGIN_CREATED` audit adds `ActiveFromDate` |
+| Z7 script | `docs/db_changes.sql` Step 12a **Part 2**: dry-run SELECT, then UPDATE of waiting logins still at 00:00 UTC to local midnight (same rule in SQL via `time_zones`). Second run changes 0 rows |
+
+**Checks**: `dotnet build` clean, **526/526** tests (6 new in `EmployeeTimeZoneTests`: rule order, unknown zone skipped, local midnight incl. a skipped midnight (Chile), new / saved employee and login lookups). `tsc` clean; eslint on the changed files shows only errors that were already there (`any` in error handlers, set-state in effects, `!` in api.ts). Throwaway copy `HRMSCore_StepTest` (test API :5299, biometric sync off, local file storage), dropped afterwards; the shared DB was not written.
+
+| Check (on the copy) | Result |
+| :-- | :-- |
+| Part 1 run twice | ✅ 122 work stations linked, **0 unmatched**; 2nd run 0 rows |
+| `time_zones` filled at API start | ✅ 419 rows; Nairobi → E. Africa Standard Time |
+| `GET /org/time-zones` as Company HR 68032 | ✅ 419 |
+| Work station zone as Group HR (Puneet): `Mars/Base` / `Asia/Kolkata` | ✅ 400 / 200, `countryId` = Kenya |
+| Country default zone as Finance Manager (Geoffrey): `Nowhere/X` / `Africa/Nairobi` | ✅ 400 / 200 |
+| Company HR edits a work station | 403 (HR has no `orgmasters.manage`; unchanged) |
+| Save A (Nairobi station, joining 25 Oct) | ✅ `activeFrom` 2026-10-24 21:00 UTC, `activeFromDate` 25 Oct |
+| Save B (Noida station set to Asia/Kolkata) | ✅ 2026-10-24 18:30 UTC |
+| A / B sign in before the date | ✅ "Your account becomes active on 25 Oct 2026 …" |
+| Save C joining today (Nairobi) | ✅ no `activeFrom`, signs in at once |
+| Z7 Part 2 (A, B reset to 00:00 UTC) | ✅ → 21:00 / 18:30 (India Standard Time from the station); 2nd run 0 rows |
+
+**Good to know**
+- **The shared DB `HRMSCore_Local2` does not have the Step 11 block** (`lookup_values.isDefault`): every employee save failed on the copy until it was run there. Run Step 11, then Step 12a Part 1, before starting this API.
+- Work station **Noida** (MAKL) has country text "Kenya", so it links to Kenya. If it is in India, pick India on the Work Stations screen (and its zone).
+- Masters screens (Countries, Work Stations) still write no audit rows, as before this step (follow-up **F21**).
+- Nothing in attendance changed yet (12d). Edit Employee does not yet re-work `activeFrom` when the joining date or work station changes (12b).
+- Run order: Part 1 → deploy API → start once (fills `time_zones`) → Part 2.
+
+## 24. Step 12b result (2026-10-15)
+
+| Part | What changed |
+| :-- | :-- |
+| Add Employee step 2 | Under Work Station: **Time Zone** line "Africa/Nairobi (company zone)" / "(from work station)" / "(country default)", read from `GET /api/employees/station-time-zone?locationId=` (follows the primary station). **Change** opens the time-zone search; **Clear** goes back to the inherited zone. Review step shows it. Shared component `modules/employees/components/EmployeeTimeZoneField.tsx` |
+| Save | `CreateEmployeeRequest.TimeZone` → `employees.timeZone`; checked against `time_zones` (else "Time zone '…' is not on the list"). `activeFrom` uses it (rule 2). `EMPLOYEE_CREATED` audit has `TimeZone` |
+| Edit Employee (/assignment → Edit) | Same field in "Employment Record"; the GET returns `timeZone`, `inheritedTimeZone`, `inheritedTimeZoneSource`. Change audited in `EMPLOYEE_DETAILS_EDITED` ("Time zone: old → new") |
+| Bulk upload | Optional column **Time Zone** after Location (Masters sheet list, export fills it). Add: saved on the employee. Update: filled cell replaces, blank keeps. Unknown zone = row not saveable (plain check, no Upload Config rule). `EMPLOYEE_BULK_UPDATE` lists the change |
+| Waiting logins | New save hook `Infrastructure/Persistence/LoginActiveFromSync.cs` (runs on every `SaveChanges`, like `JobHistoryRecorder`): when the joining date, primary work station or employee zone changes and the login is still waiting (`activeFrom` in the future), `activeFrom` = 00:00 of the joining date in the employee's zone; joining date today or earlier → `null` (login opens). Audit `LOGIN_ACTIVE_FROM_CHANGED` (User): `Changed`, `From`, `To`, `ActiveFromDate`, `TimeZone`, `ZoneFrom`. Active logins are never touched |
+| SQL | None |
+
+**Checks**: `dotnet build` clean, **529/529** tests (3 new in `EmployeeTimeZoneTests`: waiting login follows station / own zone / joining date with 3 audit rows; joining date moved to the past opens the login; active login untouched). `tsc` clean; eslint on the changed files: only the errors already in `employees/api.ts`. API run as Company HR **68032** on throwaway copy `HRMSCore_StepTest` (Step 11 + Step 12a Part 1 run on it first; 0 unmatched stations), test API :5299, biometric sync off, local file storage. Copy dropped afterwards; the shared DB was not written.
+
+| Check (on the copy, joining date = today + 10) | Result |
+| :-- | :-- |
+| Station zone of Arch Place | ✅ Africa/Nairobi, source Company (no station / country zone set) |
+| Add with zone `Mars/Base` | ✅ 400 "not on the list" |
+| Add with `Asia/Dubai`, activate on joining | ✅ saved; `activeFrom` 20:00 UTC the day before; audit has `TimeZone` |
+| Edit Employee GET | ✅ own Asia/Dubai, inherited Africa/Nairobi (Company) |
+| Clear the zone on Edit Employee | ✅ `activeFrom` → 21:00 UTC; `EMPLOYEE_DETAILS_EDITED` + `LOGIN_ACTIVE_FROM_CHANGED` |
+| Move joining date +3 days (with confirmation date) | ✅ `activeFrom` follows (21:00 UTC the day before) |
+| Assignment tab: primary station → Noida (zone Asia/Kolkata set on the copy) | ✅ 18:30 UTC |
+| Bulk update `Nowhere/X` / `asia/dubai` | ✅ not saveable / saved as Asia/Dubai, 20:00 UTC, audit lists "Time zone" |
+| Joining date moved to today | ✅ `activeFrom` cleared (login opens); 5 `LOGIN_ACTIVE_FROM_CHANGED` rows in total |
+| Zone changed on an employee with an active login | ✅ login untouched |
+| Import columns list | ✅ has "Time Zone" |
+
+**Good to know**
+- The zone only affects the login start date until Step 12d (attendance).
+- The Edit Employee save sends the zone with the other fields: a page open from before this release would clear it on save (reload once after deploying).
+- A bulk update cannot clear a zone (blank keeps). Use Edit Employee.
+- Moving a joining date earlier than the confirmation date is refused as before ("Confirmation date cannot be before the hire date"): move both.
+- Browser checks for you: artifact 12b.1–12b.7.
+
+**Run before deploying the API**: nothing new for 12b. The shared DB `HRMSCore_Local2` still needs **Step 11**, then **Step 12a Part 1**, then (after the first start) **Part 2**.
 
