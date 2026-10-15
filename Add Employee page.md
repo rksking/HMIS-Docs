@@ -2,7 +2,7 @@
 
 Branch: `add-new-emp-page` · Started 2026-10-14 · Follows `docs/follow.md` and `docs/ui.md`. Management artifact: https://claude.ai/artifact/FR3XhYGHenVQ49uk1rH9V4 (source `docs/artifacts/add-employee-page.html`; progress, how to operate, manual test checklist).
 
-**Status: Steps 0–9 done 2026-10-14. Next: Step 10 (wire-up: directory button → page, drawer renamed, end-to-end test).** The 4-step page is complete, saves the employee, their login (with the step 3 options), contacts, locations and compliance documents, and keeps unfinished forms as personal drafts.
+**Status: Steps 0–10 done (Step 10 on 2026-10-15). Open: the end-to-end run as HR in the browser (artifact checks 10.1–10.20) and the side-by-side comparison before the old drawer is removed (D8). See §16–§18.** The 4-step page is complete, saves the employee, their login (with the step 3 options), contacts, locations and compliance documents, and keeps unfinished forms as personal drafts.
 
 ## 1. Goal
 
@@ -113,7 +113,7 @@ Every step: `tsc --noEmit` + `dotnet build` clean, DB changes in `docs/db_change
 | 7 | **Step 3 UI, part B:** Educational Qualifications, Compliance Documents, Emergency & Next of Kin, User Account Creation (toggle, role, password mode, activation, force-change tick box), Notes | ✅ Done 2026-10-14 (§13) |
 | 8 | **Step 4:** Review cards + Edit links + confirmation; submit, upload documents, show credentials panel; backend saves locations, contacts, login options; audit | ✅ Done 2026-10-14 (§14) |
 | 9 | **Save as Draft**: save / resume / delete | ✅ Done 2026-10-14 (§15) |
-| 10 | **Wire-up:** directory Add Employee → page, rename the drawer (kept until you compare both, D8), end-to-end test as HR on a throwaway DB clone, docs | ☐ |
+| 10 | **Wire-up:** directory Add Employee → page, rename the drawer (kept until you compare both, D8), end-to-end test as HR on a throwaway DB clone, docs | ✅ Done 2026-10-15 (§16); HR browser run still open |
 
 ## 6. Code corrections and static values
 
@@ -223,3 +223,68 @@ Every step: `tsc --noEmit` + `dotnet build` clean, DB changes in `docs/db_change
 - **Files in a draft**: compliance rows keep their details; `!file` = **Re-attach needed** badge + **Re-attach** button (same file rules as the add form); `docsAccessErrors` blocks step 3 until every row has its file or is removed. The staged photo key and staged education certificates are kept (already on blob); `PhotoUpload` shows Change / Remove when only the file name is known.
 - **Checks**: `dotnet build` clean, 520 tests pass (+2 `EmployeeDraftTests`: never-stored values, creator + company only, audit rows), `tsc --noEmit` clean, `add-employee/` lint clean (`api.ts` / `types.ts` keep their old lint errors, none in the new lines). Browser checks 9.1–9.12 in the artifact; not run here.
 - **Not done here**: drafts never expire and there is no limit per user; switching company in the top bar does not close an open draft (saving again then makes a new draft in the new company); staged photo / certificate files of a deleted draft are not cleaned up (same as Steps 2 and 7).
+
+## 16. Step 10 result (2026-10-15)
+
+- **No SQL, no backend change.**
+- **Employee Directory** (`modules/employee-directory/EmployeeDirectoryView.tsx`): **Add Employee** now goes to `/employees/add` (`router.push`). A new light button **Register (old form)** opens the old drawer (D8). Both buttons show only with `employees.create` (before, Add Employee showed for everyone and the save was refused later).
+- **Old drawer** (`modules/employees/components/CreateEmployeeModal.tsx`): title renamed to **"Register Employee & their user access account"**. Nothing else changed; subtitle still "9-step complete workforce onboarding wizard".
+- **Not changed**: `/employees` (`EmployeesView.tsx`) still opens the old drawer from its own "+ Add Employee" button (`PermissionGate EMP_CREATE`, old styling).
+- **End-to-end check (throwaway clone `HRMSCore_StepTest`, dropped afterwards; shared DB never written)**: `dotnet build` clean, 520 tests pass, `tsc --noEmit` clean, directory file lint clean (1 old `<img>` warning). On the clone, read-only: all 5 new tables, `users.activeFrom`, the 5 new `employees` columns, the 2 country label columns, lookup lists (SALUTATION 6, MARITAL_STATUS 4, PAYMENT_METHOD 3, BANK_ACCOUNT_TYPE 6, RELATIONSHIP 6), `menu-emp-add` visible, role `company_hr` has `employees.create`, 0 drafts.
+- **Not done: the HR run through the API** (drafts, 4 steps, save, login options, uploads, audit rows). The HR password is not known locally and setting one on the clone was blocked by the tool's safety check. The full run is written as browser checks **10.1–10.20** in the artifact.
+- **Note**: SQL Server (Docker) was stopped when this step ran; Docker Desktop and the `sqlserver` container were started for the clone and left running. Your API (:5197) and dev server (:4000) were not running and were not started.
+
+## 17. Remaining follow-ups (from §7–§16)
+
+Grouped; none of these block using the page.
+
+| # | Follow-up | From |
+| :-- | :-- | :-- |
+| F1 | **Run browser checks 10.1–10.20 as HR on a throwaway DB copy** (and the not-run checks 4.x–9.x) | §10–§16 |
+| F2 | **Compare old drawer vs new page (D8)**, then remove `CreateEmployeeModal.tsx` and the "Register (old form)" button, and point `/employees` "+ Add Employee" to the page | §16 |
+| F3 | Blank account type / payment method still saved as `SALARY` / `BANK_TRANSFER`; empty notice period saved as 30 (request defaults) | §6, §14 |
+| F4 | `users.activeFrom` uses UTC midnight, not the company time zone (Kenya: sign-in from 03:00 local) | §14 |
+| F5 | A login waiting for its active-from date still shows as **Active** on user screens | §14 |
+| F6 | Personal email must be unused by any login even when no login is created (bulk validator rule) | §14 |
+| F7 | Staged photo / certificate files are never cleaned up (page left, draft deleted) | §8, §13, §15 |
+| F8 | Drafts never expire, no limit per user; switching company with a draft open saves a new draft in the new company | §15 |
+| F9 | Employee directory list returns an empty `avatarUrl` (photo not shown in the list) | §8 |
+| F10 | No photo on the old drawer (goes away with F2) | §8 |
+| F11 | Duplicate national ID / email only caught on save; no minimum-age rule (no master) | §10 |
+| F12 | `PersonnelAutocomplete` keeps its old purple `rounded-lg` look (not `docs/ui.md`); reporting manager not filtered by department | §11 |
+| F13 | Contract end date not required per contract type (no master flag) | §11 |
+| F14 | Mobile money number / provider not on the page; IBAN not checked against prefix; bank list not filtered by company country | §12 |
+| F15 | `employeesApi.checkEmployeeCodeAvailability` returns "already used" on a network error | §6 |
+| F16 | `EmployeeAssignmentForm.tsx` payment methods hardcoded; can read the `PAYMENT_METHOD` lookup | §6 |
+| F17 | `useCurrencies` starts from a static fallback list (`DEFAULT_FALLBACK_CURRENCIES`) | §6 |
+| F18 | `/employees/add` without `employees.create` shows an empty page (the gate has no message) | §16 |
+| F19 | Old lint errors left untouched: `CreateUserWizardView.tsx` (2), `CountryDrawer.tsx` (2), `employees/api.ts` / `types.ts` | §9, §12, §15 |
+
+## 18. Things you should know & decisions
+
+### Things you should know
+
+1. **Two ways to add an employee exist right now.** Directory → **Add Employee** = new 4-step page. Directory → **Register (old form)** and `/employees` → **+ Add Employee** = old 9-step drawer. Both save real employees.
+2. **The end-to-end HR run has not been done by Claude.** Build, 520 tests and the database check passed, but nothing was saved through the API as HR. Please run artifact checks 10.1–10.20 on a throwaway copy.
+3. **Run the SQL before deploying the API**: Steps 1, 3, 6, 7, 8 in `docs/db_changes.sql`. Without Step 6 the countries list comes back empty; without Step 8 (`users.activeFrom`) sign-in fails.
+4. **"Activate on joining date"** creates the login at once; sign-in is refused before the joining date (00:00 UTC). No job runs.
+5. **A typed (manual) password is never emailed** and never stored in drafts or audit rows. HR must hand it to the employee.
+6. **Drafts are personal**: only the user who saved one sees it, in the company it was saved in (developers and superadmin too). Attached compliance files are not kept in a draft and must be re-attached.
+7. **Role list on the page** = only roles whose permissions the signed-in user already holds (god-mode users see all). The same rule is checked on save.
+8. **Lookup lists** (salutation, marital status, payment method, bank account type, relationship) and **ID types per country** are managed under Masters & Configuration → Employee Lookups / ID Types. Nothing is hardcoded.
+9. **Emergency contact sync (D6)**: the primary emergency contact is also written to the 3 old `employees.emergencyContact*` columns, so old screens and reports keep working.
+10. **Primary work station** is also written to `employment_details.locationId`, so existing reports keep working.
+11. **Local DB** used by the app is `HRMSCore_Local2` (appsettings), not `HRMSCore_Local`.
+12. **Local passwords**: the documented `hr` / `superadmin` / `rakesh` passwords do not work locally; repeated tries raise `failedAttempts`.
+
+### Decisions you need to make
+
+| # | Decision | Options |
+| :-- | :-- | :-- |
+| Q1 | When can the old 9-step drawer be removed (D8)? | After you run check 10.19 (same employee through both forms) |
+| Q2 | `/employees` "+ Add Employee": keep the old drawer until Q1, or send it to the new page now? | Now: one way in. Later: remove together with the drawer |
+| Q3 | Blank account type / payment method / notice period (F3) | Keep blank, or use a lookup value flagged as default / company setting |
+| Q4 | `activeFrom` time zone (F4) | Keep 00:00 UTC, or use the company time zone |
+| Q5 | Clean-up of staged photos / certificates and old drafts (F7, F8) | A daily clean-up job with an age limit, or leave as is |
+| Q6 | How Claude may sign in for API end-to-end tests | You give a test password for `hr` on the throwaway copy, or allow resetting it there, or keep testing in the browser only |
+
