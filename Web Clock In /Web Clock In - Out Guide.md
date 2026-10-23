@@ -1,230 +1,380 @@
-# Web Clock In - Out Guide, Settings and Work Done
+# UI Design Standard
 
-Branch `web-clockInOut-ui` · work dated 22–23 Oct 2026 · technical detail in `docs/policies.md` §182–§188 · browser checklist in the management artifact (section *Clock-in Access & Check*, rows C.1–C.54).
+Every new or redesigned page and drawer follows this file. All classes live in `frontend/src/app/globals.css` under **"global scope styling"**. Reference page: `/employeedirectory` & `/employees/separation-tracker`
+Drawer: `/portal/attendance` > `New Request`
+Top status boxes design: `/portal/attendance`
+Search by employee code, name or designation: `/assignment`
+NOTE: the entire UI under each tab and drawer should be similar to '/portal/attendance' (My Requests and New Request) and '/employeedirectory' for your reference work
 
----
-
-## 1. Summary
-
-Employees can clock in and out from the portal on a computer or a phone browser, if HR has given them access. Each company decides whether the punch must come from the work location, needs a photo, needs a remark, must be inside the shift's hours, and must come from the employee's registered phone. HR reviews every web punch, including refused attempts, on one page.
-
-This round of work:
-
-- redesigned the two HR pages to the standard look,
-- closed ten gaps found in the clock-in flow (G1–G7, G9, A6, A7),
-- added three company settings and one per-employee switch.
-
-Nothing changes for a company until HR changes its settings, with one exception: the new punch-window check starts on **Warn** for every company (see §3).
+Rules:
+- Use these `standered-*` classes instead of re-typing Tailwind colour, size or radius utilities for the same thing.
+- Tailwind is still fine for layout (`flex`, `grid`, `gap-*`, `p-*`, `w-*`) and for one-off tweaks. Utilities can override the component classes because those classes sit in `@layer components`.
+- Never hardcode a new colour for a button, tab, badge or input. If a new kind is needed, add it to `globals.css` and to this file first.
+- Spelling `standered` is intentional. Keep it the same for every new class.
 
 ---
 
-## 2. Pages and who uses them
+## 1. Corner radius — always 4px
 
-| Page | Who | What it is for |
-|---|---|---|
-| **Attendance → Clock-in Access** (`/attendance/clock-access`) | HR (needs *manage attendance*; Export needs *export attendance*) | Setup. Who may clock in from web / phone, who is not ready, registered phones, switching the location check off for one person |
-| **Attendance → Clock-in Check** (`/attendance/clock-check`) | HR (same permissions) | Review. Where each web punch happened, its photo and device, and refused attempts |
-| **Masters → Attendance Policies → General Settings / Clock-in photo & location** (`/masters/shift-grace-policies`) | HR (once per company) | The company rules listed in §3 |
-| **Shifts → Roster Planner** (`/shifts/roster`) | Roster planner | Optional location per roster day (`G1 @ ANNEX`) |
-| **Self Service → Attendance → clock card** | Employee | Clock In / Clock Out |
+| Class | Use on |
+| :-- | :-- |
+| `standered-form-radius` | form / section cards, page panels, the stepper strip |
+| `standered-card-radius` | stand-alone cards: metric, summary, preview, list / result cards |
+| `standered-box-radius` | inner boxes, info banners, dropdown panels, icon tiles |
+| `standered-input-radius` | `input`, `select`, `textarea`, search boxes |
+| `standered-button-radius` | every button. The button radius is set only by this class |
 
-Both HR pages list only the employees the user may see: the companies of their workspace and, when location scope is switched on, their locations.
+- Do not use `rounded-sm/md/lg/xl/2xl/3xl`.
+- Keep `rounded-full` only for true circles and pills (avatars, step numbers, radio dots, status badges).
+- For a single side, use `rounded-t-[4px]` etc.
 
----
+## 2. Buttons
 
-## 3. Settings and configuration
+A button is always **base + colour variant + radius**, and optionally a size:
 
-### 3.1 Company settings (Attendance Policies)
+```tsx
+<button className="standered-btn standered-btn-add standered-button-radius">
+  <UserPlus /> Add Employee
+</button>
+```
 
-| Setting | Values | Default | Effect |
-|---|---|---|---|
-| Location check | Off / Warn / Enforce | Off | **Warn** saves the punch and tells the employee and HR they were outside the circle. **Enforce** refuses the punch outside the circle; the attempt is kept for HR |
-| Circle size (radius) and GPS precision | metres | per company | Used when a location has no radius of its own |
-| Photo | Off / At clock in / At clock in and out | Off | The camera opens before the punch |
-| Remark required | on / off | off | Every web clock in / out needs a remark |
-| **Clock-out Allowed After (Minutes)** | 0–1440, blank | blank (no wait) | Clock-out is refused until this many minutes after the clock-in. The card counts down |
-| **Web Clock-in Outside Punch Window** | Block / Warn / Allow | **Warn** | See §4.4 |
-| **Clock in / out from registered phone only** | on / off | off | See §4.5. Was called "Login with specific mobile" |
-| Punch window before / after shift (*Punches counted from / until*) | minutes | company value; a shift policy may override | Used for the clock-in window, the night-shift clock-out and daily processing |
+- **Base `standered-btn`:** height 38px, padding 0 16px, font 13px semibold, gap 8px. Icons are sized to 16px automatically.
+- **Sizes:**
+  - `standered-btn-sm`: 32px, for table rows, cards and compact toolbars.
+  - `standered-btn-lg`: 44px, for a hero call to action only.
 
-### 3.2 Per employee (Clock-in Access)
+### 2.1 Light buttons (white or tinted background, coloured border and text)
+Use these for page header and toolbar actions.
 
-| Switch | Where | Notes |
-|---|---|---|
-| Web clock-in access | Row switch, or tick several → *Give Access* / *Remove Access* | Without it the clock card is hidden and the server refuses. Every change is audited per employee |
-| Location check off for this person | Eye → Access tab, or tick several → *Location Check Off* | A reason is required. The last day is optional and switches back on by itself. The position is still recorded |
-| Registered phone | Eye → Phone tab → *Reset Phone* (Yes / No) | Clears the phone; the next phone the person clocks in from becomes theirs |
+| Variant | Colour | Use for |
+| :-- | :-- | :-- |
+| `standered-btn-neutral` | white / slate | Back |
+| `standered-btn-cancel` | slate tint | Cancel |
+| `standered-btn-refresh` | cyan tint | Refresh, Reload |
+| `standered-btn-export` | teal tint | Export, Export CSV |
+| `standered-btn-download` | indigo tint | Download |
+| `standered-btn-filter` | orange tint | Filters |
+| `standered-btn-add` | green tint | Add Employee, Add \*, New \* |
+| `standered-btn-upload` | purple tint | Bulk Upload, Import CSV |
+| `standered-btn-info` | blue tint | Bulk Documents, View details |
+| `standered-btn-guide` | sky tint | Workflow Guide, Help |
+| `standered-btn-warning` | amber tint | Data Quality, Review issues |
+| `standered-btn-danger-light` | rose tint | Remove, Revoke (non-final) |
 
-### 3.3 Master data HR must have in place
+### 2.2 Filled buttons (solid background, white text)
+Use a filled button for the single main action of a form, step or drawer.
 
-- **Locations** (Org Masters → Locations) need a map position before the location check is set to Warn or Enforce. Clock-in Access → *Not ready* lists people whose location has none.
-- **Shifts** need correct times, because the clock-in window comes from them. People with no shift can clock in at any time.
-- **Logins**: an employee with access but no login is listed as *Not ready*.
+| Variant | Colour | Use for |
+| :-- | :-- | :-- |
+| `standered-btn-primary` | green | Next Step, Continue, Save, Apply |
+| `standered-btn-submit` | indigo | Submit, Create & Grant, Send for approval (final commit) |
+| `standered-btn-danger` | rose | Delete, Reject (final, destructive) |
 
-### 3.4 Server / IT
+### 2.3 Other buttons
+- `standered-btn-ghost`: a text-only tertiary action, e.g. Cancel next to Submit.
+- `standered-icon-btn`: a 32px icon-only button (close, kebab, row actions). Add `standered-button-radius`.
 
-- Serve the portal over **HTTPS**. Phones allow the camera and location only on HTTPS.
-- Photo limits (types, width, size) and the location timeout are server settings (`ClockEvidence` section).
-- Run `docs/db_changes.sql` on the server. The blocks dated 2026-10-23 add the new columns; each block is safe to run twice.
-- No new permissions were added, and no scheduled job is needed.
+### 2.4 Order and placement
+- **Page header:** actions go on the right, light buttons first and Add \* last, e.g. `Data Quality · Export · Bulk Upload · Bulk Documents · Add Employee`.
+- **Forms, steps and drawer footers:** Cancel / Back go on the left or before the main action. The single filled button is always last (far right).
+- **One filled button per view.** Everything else is light, ghost or neutral.
+- **Loading:** show `<Loader2 className="animate-spin" />` in place of the icon, keep the label, and set `disabled`.
 
----
+## 3. Page header
 
-## 4. How it works
+```tsx
+<div className="standered-page-header">
+  <div className="flex items-center gap-4">
+    <div className="standered-page-icon"><Users /></div>
+    <div>
+      <h1 className="standered-page-title">Employee Directory</h1>
+      <p className="standered-page-subtitle">Manage your workforce…</p>
+    </div>
+  </div>
+  <div className="standered-page-actions">…buttons…</div>
+</div>
+```
 
-### 4.1 Clock in / out (employee)
+- Page root stays `<div className="space-y-6">` (follow.md rule 6).
+- **Title:** 26px bold. **Subtitle:** one sentence, 13px slate.
+- No marketing tags or engine names above the title (e.g. "Stored Procedure Engine").
 
-1. Open Self Service → Attendance. The card shows today's real shift (or Off day / Holiday / No shift assigned), the hours clock-in is allowed today, and which location is checked.
-2. Click **Clock In**. Allow location and camera if the company asks for them. Add a remark if required.
-3. **One clock-in and one clock-out per day.** A second clock-in or clock-out is refused with the time already recorded. To correct a day, raise a regularisation.
-4. **Clock-out wait:** if the company set one, Clock Out works only after the wait, and the card shows the time left.
-5. **Night shift:** the next morning the card shows "Night shift of 22 Oct … clock out by 11:00". Clock Out closes last night's shift. This is allowed until the shift end plus the punch window after it.
-6. A day already locked by payroll, or in a closed attendance period, refuses the punch.
+## 4. Section / card header
+- Use `standered-section-title` (15px bold) and `standered-section-subtitle` (12px).
+- The card itself is `bg-white border border-slate-200 standered-form-radius p-6`.
+- Put an optional icon tile in front: `standered-box-radius` 40px with a tinted background.
 
-### 4.2 Location check
+## 5. Tabs
 
-- The punch is compared with the **rostered location for that day**, if a published roster names one. Otherwise it is compared with the employee's work location.
-- **Warn:** the punch is saved, and the employee sees "you are N m from …; HR can see this".
-- **Enforce:** the punch is refused, and the attempt is kept on Clock-in Check as *Refused*. No attendance is recorded and no photo is kept.
-- If HR has switched the location check off for the person, the punch is accepted anywhere and shown as *Check off for person*.
+| Kind | Classes | Use |
+| :-- | :-- | :-- |
+| Underline tabs | container `standered-tabs`, item `standered-tab` + `is-active` | page-level sections (Profile / Job / Documents…) |
+| Count chip | `standered-tab-count` inside the tab | number of items in that tab |
+| Segment | container `standered-segment`, item `standered-segment-item` + `is-active` | small switches inside a card or drawer (All / Global / Company), view toggles |
 
-### 4.3 Location per roster day
+- The active tab is green, with a 2px green underline.
+- Tabs scroll horizontally on small screens. Never wrap them onto two lines.
 
-- In the Roster Planner, click a shift cell → *Works at* → pick a location.
-- In the upload sheet, write `G1 @ ANNEX` (the location code or name). Exports use the same form, so the file uploads back unchanged.
-- A shift swap moves the location with the shift. Draft rosters are ignored.
+## 6. Side drawer
+- Always use `SideDrawer.tsx` (follow.md rule 7). Its inner parts follow these classes:
 
-### 4.4 Clock-in window (punch window)
+| Part | Class |
+| :-- | :-- |
+| Header row | `standered-drawer-header` |
+| Icon tile | `standered-drawer-icon` |
+| Title | `standered-drawer-title` (16px bold) |
+| Subtitle | `standered-drawer-subtitle` (12px, one line) |
+| Body | `standered-drawer-body` (24px padding, 20px gap between sections) |
+| Footer | `standered-drawer-footer`: right-aligned, Cancel (`cancel`/`ghost`) then one filled button |
 
-- **Today's window** = shift start minus the punch window before, to shift end plus the punch window after. For example, G1 08:00–17:00 with 60 / 240 minutes gives **07:00 – 21:00**.
-  - This is the same span daily processing uses to read punches.
-  - FLEXI shifts use their own start and end.
-  - For night shifts the window ends the next morning.
-  - Weekly offs and days without a shift have no window.
-- **Outside the window**, the setting decides:
-  - **Block:** the clock-in is refused.
-  - **Warn:** the employee must confirm ("Clock in anyway?"). The punch is saved with a note HR sees on Clock-in Check and in its export.
-  - **Allow:** no check (the old behaviour).
-- **After midnight**, a clock-in inside last night's shift window is refused (Block and Warn) if last night has no clock-in. It would otherwise be saved on the wrong date; the employee raises a regularisation for last night instead.
-- The card also says when a lone clock-in would count as a clock-out ("A clock-in after 13:00 counts as a clock-out unless you clock out later").
+- **Title wording:** an action plus an object, e.g. "New Leave Request" or "Edit Shift".
+- **Subtitle:** what the drawer is for, or who it is for.
+- **Footer:** keep it visible (sticky). Never put the Save button only at the end of a long body.
 
-### 4.5 Registered phone
+### 6.1 Drawer design reference: "New Request" (`/portal/attendance`)
+Every new or redesigned drawer copies the look of the **New Request** drawer. The Employee Dossier (`/employeedirectory`) is the reference for a read-only drawer.
 
-- **Signing in is never refused** because of the phone. Leave, payslips and the rest of the portal work on any device.
-- When the company setting is on, a **clock in / out from a phone** must come from the registered phone:
-  - The first phone the employee clocks in or out from is registered.
-  - Any other phone is refused. The card greys out the buttons and says why, and the attempt is kept on Clock-in Check as *Refused*.
-  - Computers are not checked.
-- HR resets the phone on Clock-in Access.
+| Part | Use |
+| :-- | :-- |
+| Shell | `PortalTabbedDrawer` (`modules/portal/components/PortalTabbedDrawer.tsx`). White header with tabs fixed under it, a `bg-slate-50/40` body that scrolls, and an optional sticky `footer`. With one tab, no tab strip is shown. |
+| Width | `width="50vw"` (default) for a form. `width="75vw"` for content-heavy views such as a dossier, tracker or list with details. |
+| Header | Icon tile (`icon`), or `leading` for a person (the `Initials` avatar). `titleExtra` puts status badges inline after the title. The subtitle is one line joined with ` · `. **Never put a separate name/hero card in the body**; the header already does that job. |
+| Tabs | Plain labels with an icon, **never numbered** ("1. Overview" reads as a stepper). Add a `count` for lists. Keep to 6 tabs or fewer, and use a `standered-segment` switch inside a tab for related views (e.g. Attendance: Shift / Punch History / Attendance List). |
+| Cards | `FormCard` (white, 1px slate-200, 4px radius, p-4) with an `IconTile` (sm, tinted): emerald = job/primary, blue = contact/info, violet = personal/people, amber = attention, indigo = records, slate = notes. Title `standered-section-title`, optional `standered-section-subtitle`. |
+| Read-only rows | `InfoList` (`modules/employees/components/dossier/DossierParts.tsx`). Label 12px slate-500, value 13px semibold slate-900, a hairline between rows, and "—" when empty. Use `columns={2}` in a wide card. |
+| Forms | `FieldLabel` + `kitInput` / `IconField` (`RequestFormKit.tsx`), inside `standered-form-grid`. |
+| Notes | `InfoNote` (sky) for guidance. Error and success messages are an inline banner (`bg-rose-50` / `bg-emerald-50` + icon), **never `alert()` / `confirm()`**. Confirm a delete inside the row ("Delete? Yes / No"). |
+| Footer | `FormFooter` for a form (Cancel + one filled button). For a view: Close (`standered-btn-neutral`) on the left and one filled action on the right. |
+| Text | Body text is slate: 13px for values and 12px for labels and help. No 10px text and no uppercase tracking-wider headings. |
 
-### 4.6 HR review (Clock-in Check)
+## 7. Forms
 
-- Pick the dates (Today / Yesterday / 7 Days), In / Out, With photo, or click a result box: Inside, Outside, Imprecise GPS, Location not shared, No map point, Not checked, Refused.
-- The Eye icon shows:
-  - the result in plain words, the distance against the radius, a map, the photo (opening a photo is audited) and the device;
-  - why a punch was refused;
-  - a punch-window note, when the employee confirmed a clock-in outside the window.
-- Export to Excel / CSV.
+```tsx
+<div className="standered-form-grid">
+  <div className="standered-field">
+    <label className="standered-label">First Name<span className="standered-required">*</span></label>
+    <input className="standered-input standered-input-radius" />
+    <span className="standered-help">As on national ID</span>
+  </div>
+</div>
+```
 
----
+- `standered-form-grid` is an auto-fit grid with 220px minimum columns and a 16px gap.
+- `standered-input` is used for input, select and textarea: 38px high, 13px text, and a green focus ring. Add `is-invalid` for errors and show `standered-error` text under the field.
+- Required fields are marked with `standered-required` (red `*`).
+- Group long forms into section cards (§4), not one long card.
+- Errors:
+  - Show a single error banner at the top of the form (`bg-rose-50 border-rose-200 standered-box-radius`).
+  - Show field-level text under each field.
 
-## 5. Step-by-step setup for a company (HR)
+## 8. Status badges
+- Base class `standered-badge` (a pill), plus one of:
+  - `-success`: Active, Approved, Confirmed
+  - `-warning`: Pending, Probation
+  - `-danger`: Rejected, Terminated, Inactive
+  - `-info`: In progress, Draft submitted
+  - `-neutral`: Draft, Closed
+- Map the badge from the status value. Never invent a colour per page.
 
-1. **Org Masters → Locations:** give each work location its map position, and its own radius if it needs one.
-2. **Shifts:** check that every employee who will clock in has a shift with the correct times. Review the punch window before / after (company value, or a shift policy).
-3. **Attendance Policies:**
-   - Set *Location check* to **Warn** for the first weeks, plus the photo and remark settings.
-   - Set *Clock-out Allowed After*, e.g. 120, if wanted.
-   - Leave *Web Clock-in Outside Punch Window* on **Warn**.
-   - Tick *Clock in / out from registered phone only* if wanted.
-4. **Clock-in Access:**
-   - Give access to the employees who should clock in from the web.
-   - Click *Not ready* and fix each person listed (create a login, add a map point).
-5. **Week 1–2:** review **Clock-in Check** daily. When Warn results look right, change the location check to **Enforce** and, if wanted, the punch window to **Block**.
-6. **People travelling or at outreach:** Clock-in Access → Eye → *Location check for this person* → reason and last day.
-7. **New phone or lost phone:** Clock-in Access → Eye → Phone → *Reset Phone*.
+### 8.1 Record codes and name icons
+- A record code (department, grade, bank code…) is a mono chip: `standered-code` + one of `standered-code-0` … `-7`. Pick the number from the code itself (hash), so a code always has the same colour. Helper: `CodeText` in `modules/org-masters/components/master-table-kit.tsx`.
+- The name cell may lead with a 28px tinted icon tile (`standered-box-radius`) showing what the record is (e.g. layers = department, map pin = facility, stethoscope = clinical job title). Use the same tone as the record's code chip.
+- Code colours carry no meaning; never use them for status (§8).
 
----
+## 9. Tables (data lists)
 
-## 6. What was done
+**Reference: `/employeedirectory` → "Employee List"** (`modules/employee-directory/EmployeeDirectoryView.tsx` + `components/directoryColumns.tsx`). Every list screen copies this layout and behaviour.
 
-| # | Area | Change | Policies § | Commit |
-|---|---|---|---|---|
-| 1 | Both HR pages | Redesigned to the standard UI (status boxes, list with export and columns, details drawer). They list only employees the user may see; *Not ready* list; every grant / removal / phone reset audited per employee | §182 | `efe4704` |
-| 2 | G1 | Punches refused by Enforce are kept for HR (no attendance, no photo) | §183 | `efe4704` |
-| 3 | G2 | In Warn mode the employee is told they were outside | §183 | `efe4704` |
-| 4 | G3 | One clock-in and one clock-out per day; a second one is refused instead of overwriting | §183 | `efe4704` |
-| 5 | G5 | The card uses the employee's own date (time zone), not the browser's UTC date | §183 | `efe4704` |
-| 6 | G6 | A payroll-locked or closed day refuses the punch instead of showing success | §183 | `efe4704` |
-| 7 | G9 | The card shows the real shift, not a fixed "Standard Shift 08:00–17:00" | §183 | `efe4704` |
-| 8 | New | Location check off per employee, with reason and optional last day | §183 | `efe4704` |
-| 9 | G4 | Night shift can be clocked out after midnight; a stray clock-out with nothing to close is refused | §184 | `efe4704` |
-| 10 | G7 | Location per roster day (planner, upload, export, swaps, Not ready) | §185 | `efe4704` |
-| 11 | Card | A card left open past midnight switches to the new day | §185 | `efe4704` |
-| 12 | New | Clock-out wait after clock-in (company setting) | §186 | `09e4c70` |
-| 13 | Fix | A web clock-in on a day already marked absent no longer shows "No biometric punch recorded" | §186 | `09e4c70` |
-| 14 | New | Clock-in outside the shift's punch window: Block / Warn / Allow; the card shows today's window; after-midnight rule | §187 | `52dd07c` |
-| 15 | A6 / A7 | Registered phone checked at every clock in / out instead of at sign-in; sign-in never refused for it; refused attempts kept | §188 | `52dd07c` |
+### 9.1 Layout (top to bottom)
+1. **Table card:** `bg-white border border-slate-200 standered-card-radius`.
+2. **Toolbar row** (`px-4 py-3`, title left, tools right, wraps on small screens):
+   - **Title block:** a 36px icon tile, **always purple**: `bg-purple-50 text-purple-700 standered-box-radius`. Next to it go the title (16px bold, e.g. "Employee List") and a count line ("N total employees", 12px slate).
+   - **Tools, in this order:**
+     1. **Export:** a split button. The main part downloads Excel; the ▾ menu offers Excel (.xlsx) / CSV (.csv). It exports the **visible columns** with the current filters and sort. Show it only with the `<module>.export` permission.
+     2. **Columns:** a checkbox picker grouped by column group. Choices are saved per user in `localStorage`. It is disabled in grid view.
+     3. **Full screen:** a toggle between `Maximize2` and `Minimize2`. The card becomes `fixed inset-0 z-50 bg-white overflow-auto`.
+     4. **Sort by:** a select with labelled options (e.g. "Name A–Z", "Newest joiners").
+     5. **List / Grid:** an icon toggle (`LayoutList` / `LayoutGrid`). The active one is filled green.
+     6. **Per page:** a select. Options come from **Masters → Company Setup → Display Settings** (`useListDisplaySettings`). Never hardcode them; use a fallback only until the settings load.
+   - Toolbar buttons use `standered-btn standered-btn-neutral standered-btn-sm standered-button-radius`.
+3. **Inline error** under the toolbar (rose box) for export or action failures.
+4. **Body:** the table, or the grid of cards.
+5. **Pagination footer**, described in 9.4.
 
-**Database** (`docs/db_changes.sql`, blocks dated 2026-10-23; all run on HRMSCore_Local2):
+### 9.2 Table
+- **Lines:** a boxed grid, with horizontal and vertical lines (`border-r` between cells, `border-b` between rows).
+- **Header:** `bg-slate-50`, 11px bold uppercase, slate-600, `whitespace-nowrap`.
+- **Cells:** `px-3 py-2.5`, 12–13px. Use `—` (slate-400) for empty values.
+- **First column `#`:** a running row number, `(page-1)*pageSize + index + 1`.
+- **Sortable headers:** clickable, with a ▲/▼ icon. Clicking toggles asc/desc and resets to page 1.
+- **Columns:** defined once as a column config array (`key, label, group, sort?, defaultVisible, nowrap?, render`). The same `key` drives the Columns picker and Export.
+- **Last column "Actions": icons only.** Never a "View" text label and never a `⋯` menu. View is a green `Eye` icon button that opens the record's info in a drawer (e.g. the Employee Dossier). Every other row action (Edit `Pencil`, Delete `Trash2` in rose, Add Branch `Plus`…) is its own 28px icon button with a tooltip (`title`) and `aria-label`. Keep it to about 3 icons per row.
+- **Name cell:** avatar (or coloured initials) + name + code underneath. Clicking the name also opens the View drawer.
+- **Status:** shown with `standered-badge-*` (§8).
+- **Row hover:** `hover:bg-slate-50/80`.
 
-- refused-punch outcome and reason, and the location source on clock events;
-- per-employee location-check switch and its last day;
-- location per roster day;
-- clock-out wait;
-- punch-window mode (default Warn) and the punch-window note on clock events.
+### 9.3 Grid view
+- **Grid:** cards (`standered-card-radius`), `grid-cols-1 sm:2 lg:3 xl:4`, gap 12px.
+- **Card content:** avatar + name + code, a status dot, 4–5 key facts with small icons, and a footer with a date on the left and "View →" on the right.
 
-**Automated tests:** 658 backend tests pass (20 new for this work). The frontend type check is clean.
+### 9.4 Pagination footer
+- **Left:** "Showing a to b of n <items>".
+- **Right:**
+  - ‹ prev, `1 … 4 5 6 … 20`, next ›. The active page is filled green; 32px square buttons.
+  - "Go to page [ ] Go".
+- Changing filters, sort or page size always returns to page 1.
 
----
+### 9.5 States
+- **Loading:** a centred spinner plus "Loading <items>…". In future, prefer skeleton rows.
+- **Error:** a rose icon, the message and a **Retry** button.
+- **Empty:** a large faded icon, "No <items> match your search criteria", and a hint to clear filters.
 
-## 7. Testing
+### 9.6 Suggested improvements (pending your approval)
+Build these into the shared table (§9.7), so every list gets them at once:
+- **Sticky header** while scrolling, plus a **sticky first column** (name) when scrolling sideways.
+- **Row selection:** checkbox column, select all on the page or across all results, and a **bulk action bar** ("3 selected · Export · Send email · Clear").
+- **Density toggle:** Comfortable / Compact row height.
+- **Column order and width:** drag to reorder, drag the edge to resize; saved per user with the Columns choice.
+- **Saved views:** name and save filters + columns + sort ("My team", "Probation ending"), and switch between them.
+- **Active-filter chips** above the table, each removable, plus "Clear all".
+- **URL-synced state:** page, sort, filters and search kept in the query string, so a list can be shared or bookmarked and Back works.
+- **Skeleton loading rows** instead of a blank spinner. Keep the old rows visible (dimmed) while the next page loads.
+- **Keyboard:** ↑/↓ moves between rows and Enter opens View.
+- **Summary row** (totals or averages) for numeric tables such as payroll and attendance.
+- **Copy cell** on hover for codes, emails and phones.
+- **Remembered per user:** page size, density, view mode and columns.
 
-The browser checklist is in the management artifact, section *Clock-in Access & Check*:
+### 9.7 Shared component `src/components/ui/DataTable.tsx`
+- **Status:** built.
+- **Reference use:** `/employeedirectory` (`EmployeeDirectoryView.tsx`).
+- **All list screens use `<DataTable>`.** New lists must use it, and existing lists move over to it when they are next touched.
+- **Every feature is OFF by default.** Turn one on by passing its flag.
+- **Pagination is automatic:**
+  - **Server mode:** pass `pagination={{ total, page, onPageChange, onPageSizeChange }}`. The table owns rows per page and reports it through `onPageSizeChange` (on first render and on every change). The page keeps `pageSize` as `null` and fetches only once it is reported.
+  - **Client mode:** leave `pagination` out and pass all `rows`. The table sorts and pages them itself.
+  - **Page size:** `pageSize` sets the starting rows per page (default **10** when not passed). The per-page choices come from Masters → Display Settings unless `pageSizeOptions` is passed.
 
-| Rows | Covers |
-|---|---|
-| C.1–C.11 | Both pages, filters, grant access, export, phone width |
-| C.12–C.21 | Refused punches, Warn message, one session a day, location check off per person, locked day, midnight |
-| C.22–C.26 | Night-shift clock-out |
-| C.27–C.34 | Roster location, card at midnight |
-| C.35–C.39 | Clock-out wait, web-punch remark |
-| C.40–C.47 | Punch window: Block / Warn / Allow, after midnight |
-| C.48–C.54 | Registered phone at clock in / out |
+**Data**
 
-Run anything that gives access, resets phones or records punches on the test copy (`docs/scripts/stepTestClone.sh up` / `ui`, :3000), not on live data. **None of the rows has been run in a browser yet.**
+| Prop | Purpose |
+| :-- | :-- |
+| `columns` | `{ key, label, group?, sortKey?, defaultVisible?, nowrap?, align?, render?, value? }`. `key` is also the export column key; `value` is used for client-side sorting |
+| `rows`, `rowKey` | the data and a unique key per row |
+| `title`, `subtitle`, `icon`, `itemLabel` | the toolbar title block (purple icon) and the "Showing … of n `itemLabel`" text |
+| `toolbarExtra` | page-specific tools, placed before the built-in ones |
+| `filterBar` | page-specific search / filter row, shown under the toolbar (e.g. `/task`) |
 
----
+**Feature flags**
 
-## 8. Management notes
+| Flag / prop | Feature |
+| :-- | :-- |
+| `isExport` + `onExport(format, visibleKeys)` (+ `exportFormats`) | Export split button: Excel / CSV of the visible columns |
+| `isColumns` (+ `storageKey`) | Columns picker, remembered per browser; first visit shows columns with `defaultVisible` ≠ false; "Reset to default" restores that |
+| `isFullSized` | Full screen toggle |
+| `sorting` (+ `sortOptions`) | clickable sortable headers, plus the "Sort by" select when `sortOptions` is given. Use `sort` + `onSortChange` for server sorting, or `defaultSort` for client sorting |
+| `viewType="list" \| "grid" \| "list\|grid"` (+ `renderCard`) | List only (default), Grid only, or both with a toggle |
+| `gridClassName` | grid view columns (default 1/2/3/4 at sm/lg/xl); `/task` uses `grid-cols-1 md:grid-cols-2 xl:grid-cols-3` |
+| `isRowNumber` | `#` column |
+| `isView` + `onView(row)` | Actions → **View** eye icon (no label). Open the record in a drawer |
+| `rowActions(row)` | one icon button per action: `{ label, icon, onClick, danger?, hidden? }` (`label` is the tooltip; always pass an `icon`) |
+| `isSelectable` + `bulkActions(selected, clear)` | checkbox column and the "N selected" bulk bar |
+| `isRowSelectable(row)` | with `isSelectable`: rows that return false get a disabled checkbox. Rows no longer listed drop out of the selection |
+| `isStickyHeader` | header stays visible (body scrolls inside 70vh) |
+| `isDensity` | Comfortable / Compact row toggle |
+| `isGoToPage` | "Go to page" box in the footer |
+| `pageSize` (default 10) | starting rows per page, e.g. `pageSize={50}` |
+| `loading`, `error` + `onRetry`, `emptyTitle`, `emptyHint` | loading, error and empty states |
+| `storageKey` | remembers columns, density and view, e.g. `"employeeDirectory"` |
 
-**Decisions taken (23 Oct 2026)**
+**Example (server paging)**
 
-- Refused location punches are kept for HR, but **no photo** is kept for them.
-- **One** clock-in and **one** clock-out per day. Corrections go through regularisation.
-- The roster location is set **per day**, not per shift or per roster.
-- A clock-in outside the punch window defaults to **Warn**. A clock-in after midnight inside last night's open window is **refused**.
-- The registered phone is set at the **first clock-in**, not at sign-in. Refused phone attempts are **kept** on Clock-in Check.
+```tsx
+<DataTable<EmployeeListItem>
+  title="Employee List" subtitle={`${total} total employees`} icon={Users} itemLabel="employees"
+  columns={columns} rows={employees} rowKey={(e) => e.id}
+  isExport onExport={(format, keys) => api.export(filter, keys, format)}
+  isColumns isFullSized isRowNumber isGoToPage storageKey="employeeDirectory" pageSize={50}
+  sorting sortOptions={SORT_OPTIONS} sort={sortBy} onSortChange={setSortBy}
+  viewType="list|grid" renderCard={renderEmployeeCard}
+  isView onView={openDossier}
+  pagination={{ total, page, onPageChange: setPage, onPageSizeChange: setPageSize }}
+  loading={isLoading} error={loadError} onRetry={reload}
+/>
+```
 
-**Known limits**
+**Example (client paging, minimal)**
 
-- A phone browser in "desktop site" mode counts as a computer, so the registered-phone check does not apply to it.
-- A clock-in the employee confirmed outside the window (Warn) is still read by daily processing as it decides. For example, a lone clock-in late in the evening becomes a clock-out with a half day; the employee was told this before confirming.
-- Clock-out outside the window is not checked.
-- A day shift's clock-in is not closed the next day. Only night shifts carry over; anything else needs a regularisation.
-- Location accuracy depends on the phone's GPS. Use Warn first and review the *Imprecise GPS* results before choosing Enforce.
+```tsx
+<DataTable title="Shifts" columns={cols} rows={shifts} rowKey={(s) => s.id} sorting isView onView={openShift} />
+```
 
-**Before go-live**
+**Not built yet** (from §9.6): saved views, active-filter chips, page and filter state kept in the URL, drag to reorder and resize columns, keyboard row navigation, a totals row, copy-cell, skeleton loading rows.
 
-1. Run the 2026-10-23 database blocks on the server.
-2. Serve the portal over HTTPS.
-3. Give map positions to the work locations, and to any location used on the roster.
-4. Choose per company: location check (start on Warn), photo, remark, clock-out wait, punch-window mode, registered phone.
-5. Give clock-in access, then clear the *Not ready* list.
-6. Run the browser checklist C.1–C.54 on the test copy.
-7. Merge `web-clockInOut-ui` into `main` (pull request not yet opened).
+## 10. Colour meaning
+- **Green:** primary, success, active.
+- **Indigo:** final submit.
+- **Rose:** danger.
+- **Amber:** warning.
+- **Blue / sky:** info and help.
+- **Purple:** import / upload.
+- Use slate for all text and borders.
 
-**Related open items outside this work**
+## 11. Checklist before finishing a page
+- [ ] No `rounded-lg/xl/2xl` left. All radius comes from `standered-*-radius`.
+- [ ] Every button uses `standered-btn` + a variant + `standered-button-radius`.
+- [ ] There is one filled button per view, and it is last.
+- [ ] The header uses the page header classes, and drawers use the drawer classes.
+- [ ] Inputs use `standered-input`, and labels use `standered-label`.
+- [ ] Badges use `standered-badge-*`.
+- [ ] Lists follow §9 (toolbar order, purple title icon, icon-only actions, pagination footer, loading/error/empty states).
+- [ ] Layout works at phone width (no horizontal page scroll).
 
-- The Company HR role (e.g. login 68032) does not have *manage attendance*, so it cannot open these pages. Give it the permission, or use an HR Manager login.
-- The attendance-policy fix steps F1–F21 (deferred on 7 Oct) are still open. F5 (biometric punches matched to the right person) and F8 (approved corrections kept on recalculation) also affect attendance accuracy.
+## 12. Stepper (multi-step pages)
+
+**Reference:** `/user/create` (`CreateUserWizardView.tsx`) and `/employees/add` (`modules/employees/add-employee/AddEmployeeView.tsx`).
+
+### 12.1 Shared component `src/components/ui/Stepper.tsx`
+- One white strip (`standered-form-radius`, slate border) with the steps side by side, split by thin chevrons.
+- **Done step:** green circle with a check. **Active step:** green circle with its number, green title and a 3px green underline. **Next steps:** grey circle with the number.
+- Each step shows a name and one short sub-text line (e.g. "Personal & Contact" / "Basic information").
+- Clicking a **done** step goes back to it. Later steps are never clickable; the user moves forward only with **Next Step**, so each step's checks run.
+- On narrow screens the strip scrolls sideways (min width 760px). It never wraps.
+
+```tsx
+const STEPS: StepperStep[] = [
+  { id: 1, name: "Personal & Contact", subtext: "Basic information" },
+  { id: 2, name: "Employment & Organisation", subtext: "Job, department & location" },
+];
+<Stepper steps={STEPS} currentStep={step} onStepClick={goTo} />
+```
+
+| Prop | Purpose |
+| :-- | :-- |
+| `steps` | `{ id, name, subtext }[]`, ids 1..n in order |
+| `currentStep` | id of the active step |
+| `onStepClick(id)` | optional; called only for done steps |
+
+### 12.2 Page layout
+1. Page header (§3). The subtitle may change on the review step.
+2. `<Stepper>`.
+3. One error banner (§7) for the current step.
+4. The step body: section cards (§4), one per group of fields.
+5. **Footer bar**, sticky at the bottom: **Cancel** (`standered-btn-cancel`) on the left, followed by **Save as Draft** (`standered-btn-neutral`, `Save` icon) when the wizard keeps drafts; **Back** (`standered-btn-neutral`, hidden on step 1) and the single filled button on the right: **Next Step** (`standered-btn-primary`) or, on the last step, the final action (`standered-btn-submit`, e.g. "Complete Onboarding").
+- Keep all values in one form hook above the steps (e.g. `useAddEmployeeForm.ts`), so Back, a stepper click or a review **Edit** link never loses typed values.
+- **Next Step** checks only the current step; the first problem shows in the banner and under the field.
+- Changing step scrolls to the top.
+
+### 12.3 Searchable dropdown `src/components/ui/SearchSelect.tsx`
+- Use it instead of a `<select>` when a master list is long (departments, designations, grades, cost centres, shifts). Short lists (employment type, contract type, gender) stay a plain `standered-input` select.
+- It filters the already-loaded list on the client by label and `hint` (e.g. a code). For people, use `PersonnelAutocomplete` (server search).
+- Keyboard: ↓/↑ move, Enter picks, Esc closes. `clearable` shows an × to empty the value. `invalid` adds the red border.
+
+```tsx
+<SearchSelect
+  options={departments.map((d) => ({ value: d.id, label: d.name, hint: d.code }))}
+  value={form.departmentId ?? ""}
+  onChange={(v) => setField("departmentId", v)}
+  placeholder="Search department"
+  clearable
+/>
+```
